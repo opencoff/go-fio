@@ -60,13 +60,24 @@ func clonelink(dest string, src string, fi fs.FileInfo) error {
 	if err := utimes(dest, src, fi); err != nil {
 		return err
 	}
-	return clonexattr(dest, src, fi)
+	return lclonexattr(dest, src, fi)
 }
 
 func clonexattr(dest, src string, _ fs.FileInfo) error {
-	x, err := getxattr(src)
+	x, err := GetXattr(src)
 	if err != nil {
-		return fmt.Errorf("xattr: %w", err)
+		return err
 	}
-	return setxattr(dest, x)
+
+	return ReplaceXattr(dest, x)
+}
+
+// clone the xattr of the symlink itself
+func lclonexattr(dest, src string, _ fs.FileInfo) error {
+	x, err := LgetXattr(src)
+	if err != nil {
+		return err
+	}
+
+	return LreplaceXattr(dest, x)
 }

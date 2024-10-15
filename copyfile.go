@@ -25,7 +25,7 @@ import (
 // facilities if the underlying file-system implements it. It will
 // fallback to copying via memory mapping 'src' and writing the blocks
 // to 'dst'.
-func CopyFile(src, dst string, perm fs.FileMode) error {
+func CopyFile(dst, src string, perm fs.FileMode) error {
 	s, err := os.Open(src)
 	if err != nil {
 		return err
@@ -78,7 +78,7 @@ func updateMeta(dest, src string, fi fs.FileInfo) error {
 // and xattr. CloneFile will use the best available CoW facilities provided
 // by the OS and Filesystem. It will fall back to using copy via mmap(2) on
 // systems that don't have CoW semantics.
-func CloneFile(src, dst string) error {
+func CloneFile(dst, src string) error {
 	// never overwrite an existing file.
 	_, err := os.Stat(dst)
 	if err == nil {
@@ -99,7 +99,7 @@ func CloneFile(src, dst string) error {
 
 	mode := fi.Mode()
 	if mode.IsRegular() {
-		return copyRegular(s, dst, fi)
+		return copyRegular(dst, s, fi)
 	}
 
 	switch mode.Type() {
@@ -125,8 +125,7 @@ func CloneFile(src, dst string) error {
 }
 
 // copy a regular file to another regular file
-func copyRegular(s *os.File, dst string, fi fs.FileInfo) error {
-
+func copyRegular(dst string, s *os.File, fi fs.FileInfo) error {
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
 	d, err := NewSafeFile(dst, OPT_COW, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
@@ -152,7 +151,7 @@ func copyRegular(s *os.File, dst string, fi fs.FileInfo) error {
 // copy-on-write facailities if the underlying file-system implements it.
 // It will fallback to copying via memory mapping 'src' and writing the
 // blocks to 'dst'.
-func CopyFd(src, dst *os.File) error {
+func CopyFd(dst, src *os.File) error {
 	err := copyFile(dst, src)
 	if err == nil {
 		err = dst.Sync()

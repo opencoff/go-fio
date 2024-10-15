@@ -80,7 +80,7 @@ func TestAbort(t *testing.T) {
 	assert(1 == subtle.ConstantTimeCompare(ck1, ck3), "%s: file checksums mismatch", fn)
 }
 
-func TestCow(t *testing.T) {
+func TestCoW(t *testing.T) {
 	assert := newAsserter(t)
 
 	tmpdir := t.TempDir()
@@ -277,6 +277,10 @@ func createFile(nm string, sizehint int64) ([]byte, error) {
 		return nil, err
 	}
 
+	if err = fd.Close(); err != nil {
+		return nil, err
+	}
+
 	return h.Sum(nil), nil
 }
 
@@ -304,6 +308,15 @@ func createFile2(nm string, chunks, chunksize int) ([][]byte, error) {
 			return nil, fmt.Errorf("%s: partial write (exp %d, saw %d)", nm, len(buf), n)
 		}
 	}
+
+	if err = fd.Sync(); err != nil {
+		return nil, err
+	}
+
+	if err = fd.Close(); err != nil {
+		return nil, err
+	}
+
 	return ck, nil
 }
 

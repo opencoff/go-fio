@@ -16,16 +16,31 @@ package fio
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
+
+	"sync/atomic"
 )
 
 // SafeFile is an io.WriteCloser which uses a temporary file that
 // will be atomically renamed when there are no errors and
-// caller invokes Close(). Callers are advised to call
-// Abort() in the appropriate error handling (defer) context
-// so that the temporary file is properly deleted.
+// caller invokes Close(). The recommended usage is:
+//
+//	sf, err := NewSafeFile(...)
+//	... error handling
+//
+//	defer sf.Abort()
+//
+//	... write to sf ..
+//	sf.Close()
+//
+// It is safe to call Abort on a closed SafeFile; the first call
+// to Close() or Abort() seals the outcome. Similarly, it is safe
+// to call Close() after Abort() - the first call to either
+// takes precedence.
 type SafeFile struct {
 	*os.File
 
@@ -33,7 +48,11 @@ type SafeFile struct {
 	err  error
 	name string // actual filename
 
-	closed bool // set if the file is closed properly
+	// tracks the state of this file:
+	//  < 0 => aborted
+	//  > 0 => closed
+	//  = 0 => open and active
+	closed atomic.Int64
 }
 
 var _ io.WriteCloser = &SafeFile{}
@@ -91,7 +110,7 @@ func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile,
 				return nil, fmt.Errorf("safefile: open-cow: %w", err)
 			}
 		case err == nil:
-			err = copyFile(fd, old)
+			err = CopyFd(fd, old)
 			old.Close()
 
 			if err != nil {
@@ -107,6 +126,13 @@ func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile,
 	return sf, nil
 }
 
+func (sf *SafeFile) isOpen() bool {
+	if n := sf.closed.Load(); n == 0 {
+		return true
+	}
+	return false
+}
+
 // Attempt to write everything in 'b' and don't proceed if there was
 // a previous error or the file was already closed.
 func (sf *SafeFile) Write(b []byte) (int, error) {
@@ -114,8 +140,8 @@ func (sf *SafeFile) Write(b []byte) (int, error) {
 		return 0, sf.err
 	}
 
-	if sf.closed {
-		return 0, fmt.Errorf("safefile: %s is closed", sf.Name())
+	if !sf.isOpen() {
+		return 0, fmt.Errorf("safefile: %s is not open", sf.Name())
 	}
 
 	var z int
@@ -125,13 +151,14 @@ func (sf *SafeFile) Write(b []byte) (int, error) {
 	return z, nil
 }
 
+// WriteAt writes 'b' at absolute offset 'off'
 func (sf *SafeFile) WriteAt(b []byte, off int64) (int, error) {
 	if sf.err != nil {
 		return 0, sf.err
 	}
 
-	if sf.closed {
-		return 0, fmt.Errorf("safefile: %s is closed", sf.Name())
+	if !sf.isOpen() {
+		return 0, fmt.Errorf("safefile: %s is not open", sf.Name())
 	}
 	n, err := sf.File.WriteAt(b, off)
 	if err != nil {
@@ -140,15 +167,20 @@ func (sf *SafeFile) WriteAt(b []byte, off int64) (int, error) {
 	return n, err
 }
 
-// Abort the file write and remove any temporary artifacts
+// Abort the file write and remove any temporary artifacts; it is safe
+// to call Close() on a different code path; the first call to Abort() or
+// Close() takes precedence.
 func (sf *SafeFile) Abort() {
-	if sf.closed {
+	n := sf.closed.Load()
+	if n < 0 || n > 0 {
 		return
 	}
 
 	sf.File.Close()
-	sf.closed = true
 	os.Remove(sf.Name())
+	sf.closed.Store(-1)
+
+	// we retain any previous error in sf.err
 }
 
 // Close flushes all file data & metadata to disk, closes the file and atomically renames
@@ -158,7 +190,16 @@ func (sf *SafeFile) Close() error {
 		sf.Abort()
 		return sf.err
 	}
-	if sf.closed {
+
+	n := sf.closed.Load()
+	if n < 0 {
+		if sf.err != nil {
+			return sf.err
+		}
+		return errAborted
+	}
+
+	if n > 0 {
 		return sf.err
 	}
 
@@ -171,10 +212,11 @@ func (sf *SafeFile) Close() error {
 	}
 
 	// mark this file as closed
-	sf.closed = true
 	if sf.err = os.Rename(sf.Name(), sf.name); sf.err != nil {
 		return sf.err
 	}
+
+	sf.closed.Store(1)
 
 	return nil
 }
@@ -204,3 +246,36 @@ func randU32() uint32 {
 
 	return binary.LittleEndian.Uint32(b[:])
 }
+
+func flag2str(flag int) string {
+	var v []string
+	if flag&os.O_RDONLY > 0 {
+		v = append(v, "rdonly")
+	}
+	if flag&os.O_WRONLY > 0 {
+		v = append(v, "wronly")
+	}
+	if flag&os.O_RDWR > 0 {
+		v = append(v, "rdwr")
+	}
+	if flag&os.O_APPEND > 0 {
+		v = append(v, "append")
+	}
+	if flag&os.O_CREATE > 0 {
+		v = append(v, "creat")
+	}
+	if flag&os.O_EXCL > 0 {
+		v = append(v, "excl")
+	}
+	if flag&os.O_SYNC > 0 {
+		v = append(v, "sync")
+	}
+	if flag&os.O_TRUNC > 0 {
+		v = append(v, "trunc")
+	}
+	return strings.Join(v, ",")
+}
+
+var (
+	errAborted = errors.New("safefile: aborted; file not committed")
+)
