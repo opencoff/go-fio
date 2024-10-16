@@ -229,7 +229,7 @@ func randInfo() *Info {
 	}
 
 	if rand.Uint32()&1 > 0 {
-		ix.Mod = uint32(fs.ModeDir)
+		ix.Mod = fs.ModeDir
 	}
 
 	ix.Mod |= 0600

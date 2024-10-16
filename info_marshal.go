@@ -15,6 +15,7 @@ package fio
 
 import (
 	"fmt"
+	"io/fs"
 )
 
 func (ii *Info) MarshalSize() int {
@@ -88,7 +89,9 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 	b, ii.Ino = dec64[uint64](b)
 	b, ii.Nlink = dec64[uint64](b)
 
-	b, ii.Mod = dec32[uint32](b)
+	b, mode := dec32[uint32](b)
+	ii.Mod = fs.FileMode(mode)
+
 	b, ii.Uid = dec32[uint32](b)
 	b, ii.Gid = dec32[uint32](b)
 
