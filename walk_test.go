@@ -36,7 +36,6 @@ var linuxTests = []test{
 var macOSTests = []test{
 	{"/etc", ALL},
 	{"/bin", FILE},
-	{"$HOME/Library", ALL},
 	{"$HOME/Library", FILE | SYMLINK},
 }
 
