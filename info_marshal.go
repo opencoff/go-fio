@@ -82,6 +82,9 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 		return 0, fmt.Errorf("unmarshal: buf %d: %w", z, ErrTooSmall)
 	}
 
+	// let compiler know we are sized correctly
+	_ = b[z-1]
+
 	b, ii.Ino = dec64[uint64](b)
 	b, ii.Nlink = dec64[uint64](b)
 

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math/rand/v2"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,69 @@ func TestMarshalErrors(t *testing.T) {
 	m, err := di.Unmarshal(buf[:z/2])
 	assert(err != nil, "unmarshal: decoded small buf: %d bytes", m)
 	assert(m == 0, "unmarshal: partial decode: %d", m)
+}
+
+func BenchmarkMarshalUnmarshal(b *testing.B) {
+	assert := newBenchAsserter(b)
+
+	cwd, err := os.Getwd()
+	assert(err == nil, "getcwd: %s", err)
+
+	dirents, err := os.ReadDir(cwd)
+	assert(err == nil, "readdir: %s", err)
+
+	fis := make([]*Info, len(dirents))
+	bsz := 0
+	for i := range dirents {
+		de := dirents[i]
+		nm := de.Name()
+
+		// yes, we know that os.DirEntry already has a perfectly
+		// good Info() method. But, we want to use our Lstat().
+		st, err := Lstat(nm)
+		assert(err == nil, "%s: stat: %s", nm, err)
+		fis[i] = st
+		bsz += st.MarshalSize()
+	}
+
+	b.Logf("Readdir %s: %d entries\n", cwd, len(dirents))
+
+	b.ReportAllocs()
+	ebuf := make([]byte, bsz)
+	b.Run("marshal", func(b *testing.B) {
+		assert := newBenchAsserter(b)
+
+		for i := 0; i < b.N; i++ {
+			b := ebuf
+			for i := range fis {
+				st := fis[i]
+				n, err := st.MarshalTo(b)
+				assert(err == nil, "%s: marshal: %s", st.Name(), err)
+				b = b[n:]
+			}
+			assert(len(b) == 0, "marshal: %d bytes leftover", len(b))
+		}
+	})
+
+	b.Run("unmarshal", func(b *testing.B) {
+		assert := newBenchAsserter(b)
+
+		var di Info
+
+		for i := 0; i < b.N; i++ {
+			b := ebuf
+			for i := range fis {
+				st := fis[i]
+				n, err := di.Unmarshal(b)
+				assert(err == nil, "%s: unmarshal: %s", st.Name(), err)
+
+				err = infoEqual(st, &di)
+				assert(err == nil, "%s: %s", st.Name(), err)
+				b = b[n:]
+			}
+			assert(len(b) == 0, "unmarshal: %d bytes leftover", len(b))
+		}
+	})
 }
 
 func infoEqual(a, b *Info) error {
