@@ -19,7 +19,7 @@
 //
 // This library can detect mount point crossings, follow symlinks and also
 // return extended attributes (xattr(7)).
-package fio
+package walk
 
 import (
 	"errors"
@@ -30,6 +30,9 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+
+	"github.com/opencoff/go-fio"
 )
 
 // High level design:
@@ -41,7 +44,8 @@ import (
 // * Some filtering is done when we output via the `.output()` method and
 //   some filtering happens when we process entries from a directory.
 
-// Type describes the type of a given file system entry.
+// Type is an output filter that can be bitwise OR'd. It denotes
+// the types of file system entries that will be *returned* to the caller.
 type Type uint
 
 const (
@@ -71,23 +75,23 @@ type Options struct {
 	Type Type
 
 	// Excludes is a list of shell-glob patterns to exclude from
-	// the walk. If a dir matches the prefix, go-walk does
-	// not descend that subdirectory. The matching is done on the basename
-	// component of the relative pathname.
+	// the file-system traversal. In a sense it is an "input filter" -
+	// for example, excluded directories are not descended.
+	// The matching is done on the basename component of the pathname.
 	Excludes []string
 
-	// Filter is an optional caller provided callback
+	// Filter is an optional caller provided callback to similarly
+	// exclude entries from further traversal.
 	// This function must return True if this entry should
-	// no longer be processed. ie filtered out. 'nm' is the full
-	// relative path (not just the basename)
-	Filter func(fi *Info) bool
+	// no longer be processed. ie filtered out.
+	Filter func(fi *fio.Info) bool
 }
 
 // internal state
 type walkState struct {
 	Options
 	ch    chan string
-	out   chan *Info
+	out   chan *fio.Info
 	errch chan error
 
 	// type mask for output filtering
@@ -101,10 +105,14 @@ type walkState struct {
 	// Tracks worker goroutines
 	wg sync.WaitGroup
 
-	singlefs func(fi *Info) bool
+	// functions that make our filtering easier
+	filterName func(nm string) bool
+
+	// return true if we haven't crossed mount point
+	singlefs func(fi *fio.Info) bool
 
 	// the output action - either send info via chan or call user supplied func
-	apply func(fi *Info)
+	apply func(fi *fio.Info)
 
 	// Tracks device major:minor to detect mount-point crossings
 	fs  sync.Map
@@ -140,18 +148,18 @@ func (t Type) String() string {
 }
 
 // Walk traverses the entries in 'names' in a concurrent fashion and returns
-// results in a channel of *Info. The caller must service the channel. Any errors
+// results in a channel of *fio.Info. The caller must service the channel. Any errors
 // encountered during the walk are returned in the error channel.
-func Walk(names []string, opt *Options) (chan *Info, chan error) {
+func Walk(names []string, opt *Options) (chan *fio.Info, chan error) {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
 
-	out := make(chan *Info, opt.Concurrency)
+	out := make(chan *fio.Info, opt.Concurrency)
 	d := newWalkState(opt)
 
 	// This function sends output to a chan
-	d.apply = func(fi *Info) {
+	d.apply = func(fi *fio.Info) {
 		out <- fi
 	}
 
@@ -173,7 +181,7 @@ func Walk(names []string, opt *Options) (chan *Info, chan error) {
 // for entries that match criteria in 'opt'. The apply function must be concurrency-safe
 // ie it will be called concurrently from multiple go-routines. Any errors reported by
 // 'apply' will be returned from WalkFunc().
-func WalkFunc(names []string, opt *Options, apply func(fi *Info) error) error {
+func WalkFunc(names []string, opt *Options, apply func(fi *fio.Info) error) error {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
@@ -181,7 +189,7 @@ func WalkFunc(names []string, opt *Options, apply func(fi *Info) error) error {
 	d := newWalkState(opt)
 
 	// This calls the caller supplied 'apply' func
-	d.apply = func(fi *Info) {
+	d.apply = func(fi *fio.Info) {
 		if err := apply(fi); err != nil {
 			d.errch <- err
 		}
@@ -223,16 +231,19 @@ func newWalkState(opt *Options) *walkState {
 		Options: *opt,
 		ch:      make(chan string, opt.Concurrency),
 		errch:   make(chan error, opt.Concurrency),
-		singlefs: func(_ *Info) bool {
+
+		filterName: func(_ string) bool {
+			return false
+		},
+		singlefs: func(_ *fio.Info) bool {
 			return true
 		},
 	}
-	return d
-}
 
-// walk the entries in 'names'; this creates workers to
-// traverse the FS in a concurrent fashion.
-func (d *walkState) doWalk(names []string) {
+	if len(d.Excludes) > 0 {
+		d.filterName = d.exclude
+	}
+
 	if d.OneFS {
 		d.singlefs = d.isSingleFS
 	}
@@ -240,12 +251,13 @@ func (d *walkState) doWalk(names []string) {
 	// default accept filter
 	if d.Filter == nil {
 		// by default - "don't filter anything"
-		d.Filter = func(_ *Info) bool {
+		d.Filter = func(_ *fio.Info) bool {
 			return false
 		}
 	}
 
-	// build a fast lookup of our types to stdlib
+	// build a fast lookup of our types to stdlib; we will use
+	// this in the output path (walkState.output)
 	t := d.Type
 	for k, v := range typMap {
 		if (t & k) > 0 {
@@ -253,10 +265,17 @@ func (d *walkState) doWalk(names []string) {
 		}
 	}
 
+	// create workers
 	d.wg.Add(d.Concurrency)
 	for i := 0; i < d.Concurrency; i++ {
 		go d.worker()
 	}
+	return d
+}
+
+// walk the entries in 'names'; this creates workers to
+// traverse the FS in a concurrent fashion.
+func (d *walkState) doWalk(names []string) {
 
 	// send work to workers
 	dirs := make([]string, 0, len(names))
@@ -266,12 +285,12 @@ func (d *walkState) doWalk(names []string) {
 			nm = "/"
 		}
 
-		if d.exclude(nm) {
+		if d.filterName(nm) {
 			continue
 		}
 
 		fi := d.newInfo()
-		if err := Lstatm(nm, fi); err != nil {
+		if err := fio.Lstatm(nm, fi); err != nil {
 			d.error("lstat %s: %w", nm, err)
 			continue
 		}
@@ -312,7 +331,7 @@ func (d *walkState) doWalk(names []string) {
 func (d *walkState) worker() {
 	for nm := range d.ch {
 		fi := d.newInfo()
-		if err := Lstatm(nm, fi); err != nil {
+		if err := fio.Lstatm(nm, fi); err != nil {
 			d.error("lstat %s: %w", nm, err)
 			d.dirWg.Done()
 			continue
@@ -334,7 +353,7 @@ func (d *walkState) worker() {
 }
 
 // output action for entries we encounter
-func (d *walkState) output(fi *Info) {
+func (d *walkState) output(fi *fio.Info) {
 	//fmt.Printf("out: %s\n", fi.Name())
 	m := fi.Mode()
 
@@ -349,10 +368,6 @@ func (d *walkState) output(fi *Info) {
 
 // return true iff basename(nm) matches one of the patterns
 func (d *walkState) exclude(nm string) bool {
-	if len(d.Excludes) == 0 {
-		return false
-	}
-
 	bn := path.Base(nm)
 	for _, pat := range d.Excludes {
 		ok, err := path.Match(pat, bn)
@@ -422,15 +437,14 @@ func (d *walkState) walkPath(nm string) {
 		// the path (removes the leading .)
 		fp := fmt.Sprintf("%s/%s", nm, entry)
 
-		fi := d.newInfo()
-		err := Lstatm(fp, fi)
-		if err != nil {
-			d.error("walk: stat %s: %w", fp, err)
+		if d.filterName(fp) {
 			continue
 		}
 
-		m := fi.Mode()
-		if d.exclude(fp) {
+		fi := d.newInfo()
+		err := fio.Lstatm(fp, fi)
+		if err != nil {
+			d.error("walk: stat %s: %w", fp, err)
 			continue
 		}
 
@@ -443,6 +457,7 @@ func (d *walkState) walkPath(nm string) {
 			continue
 		}
 
+		m := fi.Mode()
 		switch {
 		case m.IsDir():
 			// don't descend if this directory is not on the same file system.
@@ -466,7 +481,7 @@ func (d *walkState) walkPath(nm string) {
 // Walk symlinks and don't process dirs/entries that we've already seen
 // This function updates dirs if the resolved symlink is a dir we have
 // to descend - and returns the possibly updated dirs list.
-func (d *walkState) doSymlink(fi *Info, dirs []string) []string {
+func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
 	if !d.FollowSymlinks {
 		d.output(fi)
 		return dirs
@@ -482,7 +497,7 @@ func (d *walkState) doSymlink(fi *Info, dirs []string) []string {
 	nm = newnm
 
 	// we know this is no longer a symlink
-	if err = Statm(nm, fi); err != nil {
+	if err = fio.Statm(nm, fi); err != nil {
 		d.error("symlink: stat %s: %s", nm, err)
 		return dirs
 	}
@@ -491,7 +506,8 @@ func (d *walkState) doSymlink(fi *Info, dirs []string) []string {
 	if !d.isEntrySeen(fi) {
 		switch {
 		case fi.Mode().IsDir():
-			// we only have to worry about mount points
+			// Check if we crossed mountpoints after symlink
+			// resolution.
 			if d.singlefs(fi) {
 				dirs = append(dirs, nm)
 			}
@@ -505,7 +521,7 @@ func (d *walkState) doSymlink(fi *Info, dirs []string) []string {
 
 // track this inode to detect loops; return true if we've seen it before
 // false otherwise.
-func (d *walkState) isEntrySeen(st *Info) bool {
+func (d *walkState) isEntrySeen(st *fio.Info) bool {
 	key := fmt.Sprintf("%d:%d:%d", st.Dev, st.Rdev, st.Ino)
 	x, ok := d.ino.LoadOrStore(key, st)
 	if !ok {
@@ -514,7 +530,7 @@ func (d *walkState) isEntrySeen(st *Info) bool {
 
 	// This can't fail because we checked it above before storing in the
 	// sync.Map
-	xt := x.(*Info)
+	xt := x.(*fio.Info)
 
 	//fmt.Printf("# %s: old ino: %d:%d:%d  <-> new ino: %d:%d:%d\n", nm, xt.Dev, xt.Rdev, xt.Ino, st.Dev, st.Rdev, st.Ino)
 
@@ -527,13 +543,13 @@ func (d *walkState) isEntrySeen(st *Info) bool {
 
 // track this file for future mount points
 // We call this function once for each entry passed to Walk().
-func (d *walkState) trackFS(fi *Info) {
+func (d *walkState) trackFS(fi *fio.Info) {
 	key := fmt.Sprintf("%d:%d", fi.Dev, fi.Rdev)
 	d.fs.Store(key, fi)
 }
 
 // Return true if the inode is on the same file system as the command line args
-func (d *walkState) isSingleFS(fi *Info) bool {
+func (d *walkState) isSingleFS(fi *fio.Info) bool {
 	key := fmt.Sprintf("%d:%d", fi.Dev, fi.Rdev)
 	if _, ok := d.fs.Load(key); ok {
 		return true
@@ -547,8 +563,8 @@ func (d *walkState) error(s string, args ...any) {
 }
 
 // TODO mem pool for info
-func (d *walkState) newInfo() *Info {
-	return new(Info)
+func (d *walkState) newInfo() *fio.Info {
+	return new(fio.Info)
 }
 
 // EOF

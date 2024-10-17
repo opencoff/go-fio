@@ -18,16 +18,24 @@ import (
 	"io/fs"
 )
 
+// MarshalSize returns the marshaled size of _this_
+// instance of Info
 func (ii *Info) MarshalSize() int {
-	n := len(ii.Nam)
+	n := len(ii.Nam) + 4 // name + length
+	n += xattrlen(ii.Xattr)
 
-	n += (2 * 8) + (4 * 4) + (3 * 8)
 	n += (3 * 12) // 3 time fields
 
-	n += xattrlen(ii.Xattr)
+	// rest of fixed width types
+	n += (4 * 4) + (4 * 8)
+
 	return n + 4
 }
 
+// MarshalTo marshals 'ii' into the provided buffer 'b'.
+// The buffer 'b' is expected to be sufficiently big to hold the
+// marshaled data. It returns the number of marshaled bytes
+// (ie exactly the value returned by the corresponding MarshalSize()).
 func (ii *Info) MarshalTo(b []byte) (int, error) {
 	sz := ii.MarshalSize()
 	if len(b) < sz {
@@ -38,19 +46,18 @@ func (ii *Info) MarshalTo(b []byte) (int, error) {
 	_ = b[sz-1]
 
 	// first set the length: the length we encode here is the
-	// actual remaining marshaled bytes.
+	// length of actual marshaled bytes.
 	b = enc32(b, sz-4)
 
 	b = enc64(b, ii.Ino)
-	b = enc64(b, ii.Nlink)
+	b = enc64(b, ii.Siz)
+	b = enc64(b, ii.Dev)
+	b = enc64(b, ii.Rdev)
 
 	b = enc32(b, ii.Mod)
 	b = enc32(b, ii.Uid)
 	b = enc32(b, ii.Gid)
-
-	b = enc64(b, ii.Siz)
-	b = enc64(b, ii.Dev)
-	b = enc64(b, ii.Rdev)
+	b = enc32(b, ii.Nlink)
 
 	b = enctime(b, ii.Atim)
 	b = enctime(b, ii.Mtim)
@@ -61,25 +68,17 @@ func (ii *Info) MarshalTo(b []byte) (int, error) {
 	return sz, nil
 }
 
-func (ii *Info) Marshal() ([]byte, error) {
-	n := ii.MarshalSize() + 4
-	b := make([]byte, n)
-	if _, err := ii.MarshalTo(b); err != nil {
-		return nil, err
-	}
-
-	return b, nil
-}
-
+// Unmarshal unmarshals the byte stream 'b' into a full rehydrated
+// instance 'ii'. It returns the number of bytes consumed.
 func (ii *Info) Unmarshal(b []byte) (int, error) {
 	if len(b) < 4 {
-		return 0, fmt.Errorf("unmarshal: blob len: %w", ErrTooSmall)
+		return 0, fmt.Errorf("unmarshal: len: %w", ErrTooSmall)
 	}
 
 	var z int
 
 	b, z = dec32[int](b)
-	if len(b) < z {
+	if len(b) < z || z < _FixedEncodingSize {
 		return 0, fmt.Errorf("unmarshal: buf %d: %w", z, ErrTooSmall)
 	}
 
@@ -87,17 +86,16 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 	_ = b[z-1]
 
 	b, ii.Ino = dec64[uint64](b)
-	b, ii.Nlink = dec64[uint64](b)
+	b, ii.Siz = dec64[int64](b)
+	b, ii.Dev = dec64[uint64](b)
+	b, ii.Rdev = dec64[uint64](b)
 
 	b, mode := dec32[uint32](b)
 	ii.Mod = fs.FileMode(mode)
 
 	b, ii.Uid = dec32[uint32](b)
 	b, ii.Gid = dec32[uint32](b)
-
-	b, ii.Siz = dec64[int64](b)
-	b, ii.Dev = dec64[uint64](b)
-	b, ii.Rdev = dec64[uint64](b)
+	b, ii.Nlink = dec32[uint32](b)
 
 	b, ii.Atim = dectime(b)
 	b, ii.Mtim = dectime(b)

@@ -20,26 +20,34 @@ import (
 	"time"
 )
 
+// Info represents a file/dir metadata in a normalized form
+// It satisfies the fs.FileInfo interface and notably supports
+// extended file system attributes (`xattr(7)`). This type
+// can also be safely marshaled and unmarshaled into a portable
+// byte stream.
 type Info struct {
-	Nam   string
-	Ino   uint64
-	Nlink uint64
-
-	Mod fs.FileMode
-	Uid uint32
-	Gid uint32
-	_p0 uint32 // alignment pad
-
+	Ino  uint64
 	Siz  int64
 	Dev  uint64
 	Rdev uint64
+
+	Mod   fs.FileMode
+	Uid   uint32
+	Gid   uint32
+	Nlink uint32
 
 	Atim time.Time
 	Mtim time.Time
 	Ctim time.Time
 
+	Nam   string
 	Xattr Xattr
 }
+
+const (
+	// The encoded size of the fixed-width elements of Info
+	_FixedEncodingSize int = (3 * 12) + (4 * 4) + (4 * 8)
+)
 
 var _ fs.FileInfo = &Info{}
 
@@ -96,32 +104,41 @@ func Lstatm(nm string, fi *Info) error {
 	return nil
 }
 
+// String is a string representation of Info
 func (ii *Info) String() string {
 	return fmt.Sprintf("%s: %d; %s", ii.Name(), ii.Siz, ii.Mode().String())
 }
 
 // fs.FileInfo methods of Info
+
+// Name satisfies fs.FileInfo and returns the name of the fs entry.
 func (ii *Info) Name() string {
 	return ii.Nam
 }
 
+// Size returns the fs entry's size
 func (ii *Info) Size() int64 {
 	return ii.Siz
 }
 
+// Mode returns the file mode bits
 func (ii *Info) Mode() fs.FileMode {
 	return fs.FileMode(ii.Mod)
 }
 
+// ModTime returns the file modification time
 func (ii *Info) ModTime() time.Time {
 	return ii.Mtim
 }
 
+// IsDir returns true if this Info represents a directory entry
 func (ii *Info) IsDir() bool {
 	m := ii.Mode()
 	return m.IsDir()
 }
 
+// Sys returns the platform specific info - in our case it
+// returns a pointer to the underlying Info instance.
 func (ii *Info) Sys() any {
 	return ii
 }

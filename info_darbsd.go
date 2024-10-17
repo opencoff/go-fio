@@ -22,18 +22,21 @@ import (
 
 func makeInfo(fi *Info, nm string, st *syscall.Stat_t, x Xattr) {
 	*fi = Info{
-		Nam:   nm,
-		Ino:   st.Ino,
-		Nlink: uint64(st.Nlink),
+		Ino:  st.Ino,
+		Siz:  st.Size,
+		Dev:  uint64(st.Dev),
+		Rdev: uint64(st.Rdev),
+
 		Mod:   fs.FileMode(st.Mode & 0777),
 		Uid:   st.Uid,
 		Gid:   st.Gid,
-		Siz:   st.Size,
-		Dev:   uint64(st.Dev),
-		Rdev:  uint64(st.Rdev),
-		Atim:  ts2time(st.Atimespec),
-		Mtim:  ts2time(st.Mtimespec),
-		Ctim:  ts2time(st.Ctimespec),
+		Nlink: uint32(st.Nlink),
+
+		Atim: ts2time(st.Atimespec),
+		Mtim: ts2time(st.Mtimespec),
+		Ctim: ts2time(st.Ctimespec),
+
+		Nam:   nm,
 		Xattr: x,
 	}
 

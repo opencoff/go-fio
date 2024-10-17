@@ -1,6 +1,6 @@
 // walk_test.go -- test harness for walk.go
 
-package fio
+package walk
 
 import (
 	"errors"

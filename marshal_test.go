@@ -213,26 +213,27 @@ func infoEqual(a, b *Info) error {
 
 func randInfo() *Info {
 	ix := &Info{
-		Nam:   randstr(32),
-		Ino:   rand.Uint64() + 1,
-		Nlink: rand.Uint64N(16) + 1,
+		Ino:  rand.Uint64() + 1,
+		Siz:  rand.Int64() + 1,
+		Dev:  rand.Uint64() + 1,
+		Rdev: rand.Uint64() + 1,
+
+		Nlink: rand.Uint32N(16) + 1,
 		Uid:   rand.Uint32(),
 		Gid:   rand.Uint32(),
+		Mod:   0644,
 
-		Siz:   rand.Int64() + 1,
-		Dev:   rand.Uint64() + 1,
-		Rdev:  rand.Uint64() + 1,
-		Atim:  randtime(),
-		Mtim:  randtime(),
-		Ctim:  randtime(),
-		Xattr: randxattr(rand.IntN(16) + 1),
+		Atim: randtime(),
+		Mtim: randtime(),
+		Ctim: randtime(),
+
+		Nam:   randstr(64),
+		Xattr: randxattr(rand.IntN(8) + 1),
 	}
 
 	if rand.Uint32()&1 > 0 {
-		ix.Mod = fs.ModeDir
+		ix.Mod |= fs.ModeDir
 	}
-
-	ix.Mod |= 0600
 
 	return ix
 }
