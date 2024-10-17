@@ -35,18 +35,6 @@ func chmod(dest string, _ string, fi fs.FileInfo) error {
 	return os.Chmod(dest, fi.Mode())
 }
 
-func mknod(dest string, src string, fi fs.FileInfo) error {
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		if err := syscall.Mknod(dest, uint32(fi.Mode()), int(st.Dev)); err != nil {
-			return fmt.Errorf("mknod: %w", err)
-		}
-	}
-	if err := utimes(dest, src, fi); err != nil {
-		return err
-	}
-	return clonexattr(dest, src, fi)
-}
-
 // clone a symlink - ie we make the target point to the same one as src
 func clonelink(dest string, src string, fi fs.FileInfo) error {
 	targ, err := os.Readlink(src)

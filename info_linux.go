@@ -17,7 +17,7 @@ package fio
 
 import (
 	"io/fs"
-	"time"
+	"syscall"
 )
 
 func makeInfo(fi *Info, nm string, st *syscall.Stat_t, x Xattr) {

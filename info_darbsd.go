@@ -1,4 +1,4 @@
-// info_darwin.go - syscall.Stat_t to Info for darwin
+// info_darbsd.go - syscall.Stat_t to Info for darwin and freebsd
 //
 // (c) 2024- Sudhi Herle <sudhi@herle.net>
 //
@@ -11,7 +11,7 @@
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
 
-//go:build darwin
+//go:build darwin || freebsd
 
 package fio
 
