@@ -137,6 +137,13 @@ func (ii *Info) IsDir() bool {
 	return m.IsDir()
 }
 
+
+// IsRegular returns true if this Info represents a regular file
+func (ii *Info) IsRegular() bool {
+	m := ii.Mode()
+	return m.IsRegular()
+}
+
 // Sys returns the platform specific info - in our case it
 // returns a pointer to the underlying Info instance.
 func (ii *Info) Sys() any {
