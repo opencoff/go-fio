@@ -32,6 +32,28 @@ func (x Xattr) String() string {
 	return s.String()
 }
 
+
+// Equal returns true if all xattr of 'x' is the same as all the 
+// xattr of 'y' and returns false otherwise.
+func (x Xattr) Equal(y Xattr) bool {
+	done := make(map[string]bool, len(x))
+	for x, a := range x {
+		done[x] = true
+		if b, ok := y[x]; !ok {
+			return false
+		} else if a != b {
+			return false
+		}
+	}
+
+	for y, _ := range x {
+		if _, ok := done[y]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // GetXattr returns all the extended attributes of a file.
 // This function will traverse symlinks.
 func GetXattr(nm string) (Xattr, error) {
