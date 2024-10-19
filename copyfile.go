@@ -104,9 +104,12 @@ func CloneFile(dst, src string) error {
 
 	switch mode.Type() {
 	case fs.ModeDir:
-		// We only update the metadata. Caller is responsible for cloning
-		// the contents (ie deep copy)
-		// now set mtime/ctime, mode etc.
+		if err = os.MkdirAll(dst, mode&fs.ModePerm); err != nil {
+			return err
+		}
+
+		// update metadata; caller is responsible for deep clone of
+		// a directory.
 		err = updateMeta(dst, src, fi)
 
 	case fs.ModeSymlink:

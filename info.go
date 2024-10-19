@@ -137,7 +137,6 @@ func (ii *Info) IsDir() bool {
 	return m.IsDir()
 }
 
-
 // IsRegular returns true if this Info represents a regular file
 func (ii *Info) IsRegular() bool {
 	m := ii.Mode()

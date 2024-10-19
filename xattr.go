@@ -32,8 +32,7 @@ func (x Xattr) String() string {
 	return s.String()
 }
 
-
-// Equal returns true if all xattr of 'x' is the same as all the 
+// Equal returns true if all xattr of 'x' is the same as all the
 // xattr of 'y' and returns false otherwise.
 func (x Xattr) Equal(y Xattr) bool {
 	done := make(map[string]bool, len(x))
@@ -46,7 +45,7 @@ func (x Xattr) Equal(y Xattr) bool {
 		}
 	}
 
-	for y, _ := range x {
+	for y := range x {
 		if _, ok := done[y]; !ok {
 			return false
 		}

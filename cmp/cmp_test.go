@@ -50,7 +50,7 @@ func TestEmptyDir(t *testing.T) {
 
 	wo := &walk.Options{
 		Concurrency: 4,
-		Type: walk.ALL,
+		Type:        walk.ALL,
 	}
 
 	lt, err := NewTree(lhs, WithWalkOptions(wo))
@@ -75,7 +75,6 @@ func TestEmptyDir(t *testing.T) {
 	os.RemoveAll(tdir)
 }
 
-
 func TestEmptyRhs(t *testing.T) {
 	assert := newAsserter(t)
 
@@ -87,7 +86,7 @@ func TestEmptyRhs(t *testing.T) {
 
 	wo := &walk.Options{
 		Concurrency: 4,
-		Type: walk.FILE,
+		Type:        walk.ALL & ^walk.DIR,
 	}
 
 	lt, err := NewTree(lhs, WithWalkOptions(wo))
