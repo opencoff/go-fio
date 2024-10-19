@@ -17,7 +17,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/opencoff/go-fio"
@@ -131,6 +133,7 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 
 	d.fileEq = makeComparators(opts)
 
+
 	left, err := d.lhs.gather()
 	if err != nil {
 		return nil, err
@@ -155,17 +158,21 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 
 	// first iterate over entries on the left
 	for nm, li := range left {
+		fmt.Printf("lhs: %s ..", nm)
 		ri, ok := right[nm]
 		if !ok {
+			fmt.Printf(" +Lo\n")
 			lo = append(lo, nm)
 			continue
 		}
 
 		done[nm] = true
 		if (li.Mod & ^fs.ModePerm) != (ri.Mod & ^fs.ModePerm) {
+			fmt.Printf("+ funny\n")
 			// funny business
 			funny = append(funny, nm)
 		} else {
+			fmt.Printf("+ worker\n")
 			// submit work for workers to handle
 			och <- work{li, ri}
 		}
@@ -223,6 +230,29 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 	}
 
 	return result, nil
+}
+
+
+func (d *Difference) String() string {
+	var b strings.Builder
+
+
+	dump := func(desc string, names []string) {
+			fmt.Fprintf(&b, "%s:\n", desc)
+			for _, nm := range names {
+				fmt.Fprintf(&b, "    %s\n", nm)
+			}
+		}
+
+	b.WriteString("diff-result:\n")
+
+	dump("same", d.Same)
+	dump("diff", d.Diff)
+	dump("left only", d.LeftOnly)
+	dump("right only", d.RightOnly)
+	dump("funny", d.Funny)
+
+	return b.String()
 }
 
 // given to workers to figure out actual differences
@@ -378,13 +408,11 @@ func (t *Tree) gather() (map[string]*fio.Info, error) {
 		wg.Done()
 	}(&wg, ech)
 
-	n := len(t.dir)
 	for ii := range och {
-		nm := ii.Name()
-		if len(nm) > n {
-			nm = nm[n+1:]
+		nm, _ := filepath.Rel(t.dir, ii.Name())
+		if nm != "." {
+			tree[nm] = ii
 		}
-		tree[nm] = ii
 	}
 
 	wg.Wait()
