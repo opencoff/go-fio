@@ -59,9 +59,9 @@ type op func(dest, src string, fi fs.FileInfo) error
 // to do it in the end.
 var _Mdupdaters = []op{
 	clonexattr,
-	utimes,
 	chmod,
 	chown,
+	utimes,
 }
 
 // update all the metadata
@@ -80,9 +80,14 @@ func updateMeta(dest, src string, fi fs.FileInfo) error {
 // systems that don't have CoW semantics.
 func CloneFile(dst, src string) error {
 	// never overwrite an existing file.
-	_, err := os.Stat(dst)
+	_, err := Lstat(dst)
 	if err == nil {
 		return fmt.Errorf("clonefile: destination %s already exists", dst)
+	}
+
+	fi, err := Lstat(src)
+	if err != nil {
+		return fmt.Errorf("clonefile: %w", err)
 	}
 
 	s, err := os.Open(src)
@@ -91,11 +96,6 @@ func CloneFile(dst, src string) error {
 	}
 
 	defer s.Close()
-
-	fi, err := s.Stat()
-	if err != nil {
-		return fmt.Errorf("clonefile: %w", err)
-	}
 
 	mode := fi.Mode()
 	if mode.IsRegular() {

@@ -150,5 +150,6 @@ func (ii *Info) Sys() any {
 }
 
 func ts2time(a syscall.Timespec) time.Time {
-	return time.Unix(a.Sec, a.Nsec)
+	t := time.Unix(a.Sec, a.Nsec)
+	return t
 }

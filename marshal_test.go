@@ -160,7 +160,6 @@ func infoEqual(a, b *Info) error {
 	if a.Nlink != b.Nlink {
 		return fmt.Errorf("nlink: exp %d, saw %d", a.Nlink, b.Nlink)
 	}
-
 	if a.Nlink != b.Nlink {
 		return fmt.Errorf("nlink: exp %d, saw %d", a.Nlink, b.Nlink)
 	}
