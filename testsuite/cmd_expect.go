@@ -36,11 +36,9 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 			return fmt.Errorf("expect: unknown keyword %s", key)
 		}
 
-		if len(vals) == 0 {
-			return fmt.Errorf("expect: %s is empty?", key)
+		if len(vals) > 0 {
+			exp[key] = append(exp[key], vals...)
 		}
-
-		exp[key] = append(exp[key], vals...)
 	}
 
 	// now run the difference engine and collect output

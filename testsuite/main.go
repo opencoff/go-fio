@@ -24,7 +24,7 @@ type config struct {
 
 func main() {
 
-	var progress, help, serial bool
+	var progress, help, serial, stdout bool
 	var tmpdir string
 
 	fs := flag.NewFlagSet(Z, flag.ExitOnError)
@@ -33,6 +33,7 @@ func main() {
 	fs.BoolVarP(&progress, "progress", "p", false, "Show progress bar [False]")
 	fs.StringVarP(&tmpdir, "workdir", "d", "", "Use `D` as the test root directory [OS Tempdir]")
 	fs.BoolVarP(&serial, "serial", "s", false, "Run tests serially [False]")
+	fs.BoolVarP(&stdout, "log-stdout", "", false, "Put log output to STDOUT [False]")
 
 	fs.SetOutput(os.Stdout)
 
@@ -59,6 +60,7 @@ func main() {
 	cfg := &config{
 		tempdir:  tempdir,
 		progress: progress,
+		logStdout: stdout,
 	}
 
 	for _, fn := range args {

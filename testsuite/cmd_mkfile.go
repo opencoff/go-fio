@@ -41,7 +41,7 @@ func (t *mkfileCmd) Run(env *TestEnv, args []string) error {
 	env.log.Debug("mkfile: sizes: min %d max %d\n",
 		t.minsz.Value(), t.maxsz.Value())
 
-	n := 0
+	now := time.Now().UTC()
 	for i := range args {
 		arg := args[i]
 
@@ -58,21 +58,16 @@ func (t *mkfileCmd) Run(env *TestEnv, args []string) error {
 			return fmt.Errorf("mkfile: %s is empty?", key)
 		}
 
-		n += len(vals)
-		if err = t.mkfile(key, vals, env); err != nil {
+		if err = t.mkfile(key, vals, env, now); err != nil {
 			return fmt.Errorf("mkfile: %w", err)
 		}
 	}
 
-	if n == 0 {
-		return fmt.Errorf("mkfile: no entries to create")
-	}
 	return nil
 }
 
-func (t *mkfileCmd) mkfile(key string, vals []string, env *TestEnv) error {
+func (t *mkfileCmd) mkfile(key string, vals []string, env *TestEnv, now time.Time) error {
 	base := env.TestRoot
-	now := time.Now().UTC()
 	for _, nm := range vals {
 		var err error
 
