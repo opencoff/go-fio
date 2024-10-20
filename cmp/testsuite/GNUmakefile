@@ -15,7 +15,7 @@ arch    = $(shell $(build) --print-arch)
 trunner = $(bindir)/$(arch)/$(program)
 
 # tests we will run
-testdir = ../tests
+testdir = ./tests
 tests = $(wildcard $(testdir)/*.t)
 
 # controls whether trunner runs tests in parallel or
