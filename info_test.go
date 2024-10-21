@@ -47,7 +47,7 @@ func TestXattr(t *testing.T) {
 	tmp := t.TempDir()
 	nm := path.Join(tmp, "testfile")
 	err := mkfilex(nm)
-	assert(err == nil, "test file %s: %w", nm, err)
+	assert(err == nil, "test file %s: %s", nm, err)
 
 	x, err := GetXattr(nm)
 	assert(err == nil, "getxattr: %s", err)
@@ -119,9 +119,29 @@ func TestCloneRegFile(t *testing.T) {
 }
 
 func TestCloneSymlink(t *testing.T) {
-}
+	assert := newAsserter(t)
 
-func TestClonePipe(t *testing.T) {
+	tmp := t.TempDir()
+	nm := path.Join(tmp, "testfile")
+	err := mkfilex(nm)
+	assert(err == nil, "test file %s: %s", nm, err)
+
+	newnm := path.Join(tmp, "symlink")
+	linknm := "./testfile"
+	err = os.Symlink(linknm, newnm)
+	assert(err == nil, "symlink: %s", err)
+
+	nm2 := path.Join(tmp, "new-link")
+	err = CloneFile(nm2, newnm)
+	assert(err == nil, "clonelink: %s", err)
+
+	// verify that the link contents are readable
+	vlink, err := os.Readlink(nm2)
+	assert(err == nil, "readlink: %s", err)
+	assert(vlink == linknm, "link mismatch: exp %s, saw %s", linknm, vlink)
+
+	err = mdEqual(nm2, newnm)
+	assert(err == nil, "clonelink: %s", err)
 }
 
 func mdEqual(newf, oldf string) error {
