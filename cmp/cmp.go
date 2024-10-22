@@ -65,12 +65,17 @@ func WithDeepCompare(same func(lhs, rhs *fio.Info) bool) Opt {
 	}
 }
 
+type Entry struct {
+	Name string // relative path name
+	Info *fio.Info
+}
+
 // Difference captures the results of comparing two trees
 type Difference struct {
 	// Each of these maps uses a relative path as the key - it
 	// is relative to the argument passed to NewTree().
-	Left  map[string]*fio.Info
-	Right map[string]*fio.Info
+	Left  []Entry
+	Right []Entry
 
 	// entries that are only on the left
 	LeftOnly []string
@@ -134,12 +139,12 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 
 	d.fileEq = makeComparators(opts)
 
-	left, err := d.lhs.gather()
+	left, lmap, err := d.lhs.gather()
 	if err != nil {
 		return nil, err
 	}
 
-	right, err := rhs.gather()
+	right, rmap, err := rhs.gather()
 	if err != nil {
 		return nil, err
 	}
@@ -157,8 +162,12 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 	done := make(map[string]bool, len(left))
 
 	// first iterate over entries on the left
-	for nm, li := range left {
-		ri, ok := right[nm]
+	for i := range left {
+		e := &left[i]
+		nm := e.Name
+		li := e.Info
+
+		ri, ok := rmap[nm]
 		if !ok {
 			lo = append(lo, nm)
 			continue
@@ -175,8 +184,11 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 	}
 
 	// now see what remains on the right
-	for nm := range right {
-		_, ok := left[nm]
+	for i := range right {
+		e := &right[i]
+		nm := e.Name
+
+		_, ok := lmap[nm]
 		if !ok {
 			ro = append(ro, nm)
 			continue
@@ -221,20 +233,30 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 func (d *Difference) String() string {
 	var b strings.Builder
 
-	dump := func(desc string, names []string, m map[string]*fio.Info) {
+	dump := func(desc string, names []string) {
 		fmt.Fprintf(&b, "%s:\n", desc)
 		for _, nm := range names {
-			fmt.Fprintf(&b, "    %s: %s\n", nm, m[nm])
+			fmt.Fprintf(&b, "    %s\n", nm)
+		}
+	}
+
+	dumpE := func(desc string, entries []Entry) {
+		fmt.Fprintf(&b, "%s\n", desc)
+		for i := range entries {
+			e := &entries[i]
+			fmt.Fprintf(&b, "    %s: %s\n", e.Name, e.Info)
 		}
 	}
 
 	b.WriteString("diff-result:\n")
 
-	dump("same", d.Same, d.Left)
-	dump("diff", d.Diff, d.Left)
-	dump("left only", d.LeftOnly, d.Left)
-	dump("right only", d.RightOnly, d.Right)
-	dump("funny", d.Funny, d.Left)
+	dumpE("LHS", d.Left)
+	dumpE("RHS", d.Right)
+	dump("same", d.Same)
+	dump("diff", d.Diff)
+	dump("left only", d.LeftOnly)
+	dump("right only", d.RightOnly)
+	dump("funny", d.Funny)
 
 	return b.String()
 }
@@ -419,8 +441,9 @@ func NewTree(nm string, opts ...TreeOpt) (*Tree, error) {
 	return t, nil
 }
 
-func (t *Tree) gather() (map[string]*fio.Info, error) {
+func (t *Tree) gather() ([]Entry, map[string]*fio.Info, error) {
 	tree := make(map[string]*fio.Info)
+	list := make([]Entry, 0, 16)
 
 	// setup a walk instance and gather entries
 	och, ech := walk.Walk([]string{t.dir}, &t.treeopt.Options)
@@ -440,12 +463,13 @@ func (t *Tree) gather() (map[string]*fio.Info, error) {
 		nm, _ := filepath.Rel(t.dir, ii.Name())
 		if nm != "." {
 			tree[nm] = ii
+			list = append(list, Entry{nm, ii})
 		}
 	}
 
 	wg.Wait()
 	if len(errs) > 0 {
-		return tree, errors.Join(errs...)
+		return nil, nil, errors.Join(errs...)
 	}
-	return tree, nil
+	return list, tree, nil
 }

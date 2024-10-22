@@ -23,6 +23,7 @@ func mkdir(dn string, tm time.Time) error {
 			return err
 		}
 	}
+
 	return os.Chtimes(dn, tm, tm)
 }
 

@@ -110,7 +110,8 @@ func makeEnv(tname string, cfg *config) (*TestEnv, error) {
 
 	wo := walk.Options{
 		Concurrency: 8,
-		Type:        walk.ALL & ^walk.DIR,
+		//Type:        walk.ALL & ^walk.DIR,
+		Type: walk.ALL,
 	}
 
 	lt, err := cmp.NewTree(lhs, cmp.WithWalkOptions(&wo))
