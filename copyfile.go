@@ -1,7 +1,7 @@
 // copyfile.go - copy a file efficiently using platform specific
 // primitives and fallback to simple mmap'd copy.
 //
-// (c) 2021 Sudhi Herle <sudhi@herle.net>
+// (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2
 //
