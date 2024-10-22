@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"time"
 
 	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
@@ -24,6 +25,8 @@ type TestEnv struct {
 	rtree *cmp.Tree
 
 	log logger.Logger
+
+	Start time.Time
 }
 
 func RunTest(tname string, cfg *config, ts []TestSuite) (err error) {
@@ -134,6 +137,8 @@ func makeEnv(tname string, cfg *config) (*TestEnv, error) {
 
 		ltree: lt,
 		rtree: rt,
+
+		Start: time.Now(),
 	}
 
 	return e, nil

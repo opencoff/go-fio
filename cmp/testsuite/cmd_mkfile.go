@@ -42,7 +42,7 @@ func (t *mkfileCmd) Run(env *TestEnv, args []string) error {
 		t.minsz.Value(), t.maxsz.Value())
 
 	args = t.Args()
-	now := time.Now().UTC()
+	now := env.Start
 	switch t.target {
 	case "lhs":
 		err = t.mkfile("lhs", args, env, now)
@@ -70,14 +70,14 @@ func (t *mkfileCmd) cloneLhs(args []string, env *TestEnv) error {
 	base := env.TestRoot
 	for _, nm := range args {
 		if path.IsAbs(nm) {
-			return fmt.Errorf("mkfile: common file %s can't be absolute", nm)
+			return fmt.Errorf("common file %s can't be absolute", nm)
 		}
 
 		lhs := path.Join(base, "lhs", nm)
 		rhs := path.Join(base, "rhs", nm)
 		env.log.Debug("mkfile clone %s -> %s", lhs, rhs)
 		if err := fio.CloneFile(rhs, lhs); err != nil {
-			return fmt.Errorf("mkfile: %s: %w", rhs, err)
+			return fmt.Errorf("%s: %w", rhs, err)
 		}
 	}
 	return nil
@@ -103,7 +103,7 @@ func (t *mkfileCmd) mkfile(key string, args []string, env *TestEnv, now time.Tim
 		}
 
 		if err != nil {
-			return fmt.Errorf("mkfile: %s: %w", fn, err)
+			return fmt.Errorf("%s: %w", fn, err)
 		}
 	}
 	return nil

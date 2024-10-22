@@ -48,6 +48,8 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 		return err
 	}
 
+	env.log.Debug("Differences:\n%s\n", diff)
+
 	for k, v := range exp {
 		switch k {
 		case "lo":
