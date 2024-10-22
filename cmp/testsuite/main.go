@@ -56,7 +56,7 @@ func main() {
 		tempdir = tmpdir
 	}
 
-	tempdir = path.Join(tempdir, "dircmp", randstr(5))
+	tempdir = path.Join(tempdir, "dircmp", randstr(4))
 	cfg := &config{
 		tempdir:   tempdir,
 		progress:  progress,
