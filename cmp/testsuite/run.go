@@ -7,7 +7,7 @@ import (
 	"os"
 	"path"
 
-	cmp "github.com/opencoff/go-fio/cmp"
+	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
 	"github.com/opencoff/go-logger"
 )

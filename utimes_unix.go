@@ -11,28 +11,29 @@
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
 
-//go:build unix && !darwin && !freebsd && !netbsd
+//go:build unix
 
 package fio
 
 import (
 	"fmt"
-	"io/fs"
-	"syscall"
-
-	"golang.org/x/sys/unix"
+	"os"
 )
 
-func utimes(dest string, _ string, fi fs.FileInfo) error {
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+func utimes(dest string, _ string, fi *Info) error {
+	if err := os.Chtimes(dest, fi.Atim, fi.Mtim); err != nil {
+		return fmt.Errorf("utimes: %w", err)
+	}
+	return nil
+	/*
 		tv := []unix.Timeval{
-			unix.NsecToTimeval(st.Atim.Nano()),
-			unix.NsecToTimeval(st.Mtim.Nano()),
+			unix.NsecToTimeval(fi.Atim.Nano()),
+			unix.NsecToTimeval(fi.Mtim.Nano()),
 		}
 
 		if err := unix.Lutimes(dest, tv); err != nil {
 			return fmt.Errorf("utimes: set: %w", err)
 		}
-	}
-	return nil
+		return nil
+	*/
 }

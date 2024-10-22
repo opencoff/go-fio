@@ -20,27 +20,27 @@ import (
 	"io/fs"
 )
 
-func utimes(dest string, _ string, fi fs.FileInfo) error {
+func utimes(dest string, _ string, fi *Info) error {
 	return fmt.Errorf("utimes: not supported")
 }
 
-func chown(dest string, _ string, fi fs.FileInfo) error {
+func chown(dest string, _ string, fi *Info) error {
 	return fmt.Errorf("chown: not supported")
 }
 
-func chmod(dest string, _ string, fi fs.FileInfo) error {
+func chmod(dest string, _ string, fi *Info) error {
 	return fmt.Errorf("chmod: not supported")
 }
 
-func mknod(dest string, src string, fi fs.FileInfo) error {
+func mknod(dest string, src string, fi *Info) error {
 	return fmt.Errorf("mknod: not supported")
 }
 
 // clone a symlink - ie we make the target point to the same one as src
-func clonelink(dest string, src string, fi fs.FileInfo) error {
+func clonelink(dest string, src string, fi *Info) error {
 	return fmt.Errorf("clonelink: not supported")
 }
 
-func clonexattr(dest, src string, _ fs.FileInfo) error {
+func clonexattr(dest, src string, _ *Info) error {
 	return fmt.Errorf("clonexattr: not supported")
 }

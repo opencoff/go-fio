@@ -90,7 +90,7 @@ type Difference struct {
 	Funny []string
 }
 
-type fileqFunc func(a, b *fio.Info) bool
+type fileqFunc func(a, b *fio.Info) (bool, diffType)
 
 // diff engine state for internal use
 type differ struct {
@@ -158,23 +158,19 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 
 	// first iterate over entries on the left
 	for nm, li := range left {
-		fmt.Printf("lhs: %s ..", nm)
 		ri, ok := right[nm]
 		if !ok {
-			fmt.Printf(" +Lo\n")
 			lo = append(lo, nm)
 			continue
 		}
 
 		done[nm] = true
 		if (li.Mod & ^fs.ModePerm) != (ri.Mod & ^fs.ModePerm) {
-			fmt.Printf("+ funny\n")
 			// funny business
 			funny = append(funny, nm)
 		} else {
-			fmt.Printf("+ worker\n")
 			// submit work for workers to handle
-			och <- work{li, ri}
+			och <- work{nm, li, ri}
 		}
 	}
 
@@ -196,16 +192,6 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 		//       b) file is already processed
 		//
 		panic(fmt.Sprintf("dircmp: rhs %s: WTF\n", nm))
-
-		/*
-			if (ri.Mod & ^fs.ModePerm) != (li.Mod & ^fs.ModePerm) {
-				// funny business
-				funny = append(funny, nm)
-			} else {
-				// submit work for workers to handle
-				och <- work{li, ri}
-			}
-		*/
 	}
 
 	// wait for workers to complete
@@ -235,26 +221,27 @@ func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
 func (d *Difference) String() string {
 	var b strings.Builder
 
-	dump := func(desc string, names []string) {
+	dump := func(desc string, names []string, m map[string]*fio.Info) {
 		fmt.Fprintf(&b, "%s:\n", desc)
 		for _, nm := range names {
-			fmt.Fprintf(&b, "    %s\n", nm)
+			fmt.Fprintf(&b, "    %s: %s\n", nm, m[nm])
 		}
 	}
 
 	b.WriteString("diff-result:\n")
 
-	dump("same", d.Same)
-	dump("diff", d.Diff)
-	dump("left only", d.LeftOnly)
-	dump("right only", d.RightOnly)
-	dump("funny", d.Funny)
+	dump("same", d.Same, d.Left)
+	dump("diff", d.Diff, d.Left)
+	dump("left only", d.LeftOnly, d.Left)
+	dump("right only", d.RightOnly, d.Right)
+	dump("funny", d.Funny, d.Left)
 
 	return b.String()
 }
 
 // given to workers to figure out actual differences
 type work struct {
+	nm  string // relative path name
 	lhs *fio.Info
 	rhs *fio.Info
 }
@@ -268,7 +255,7 @@ func (d *differ) worker(me int, och chan work, wg *sync.WaitGroup) {
 		// we know these are both of the same "type"
 		lhs := w.lhs
 		rhs := w.rhs
-		nm := lhs.Name()
+		nm := w.nm
 
 		if lhs.IsRegular() {
 			// file size is only meaningful for regular files. So get that
@@ -280,7 +267,7 @@ func (d *differ) worker(me int, och chan work, wg *sync.WaitGroup) {
 		}
 
 		// for all entries, compare the remaining attributes
-		if d.fileEq(lhs, rhs) {
+		if eq, _ := d.fileEq(lhs, rhs); eq {
 			same = append(same, nm)
 		} else {
 			diff = append(diff, nm)
@@ -290,6 +277,30 @@ func (d *differ) worker(me int, och chan work, wg *sync.WaitGroup) {
 	d.same[me] = same
 	d.diff[me] = diff
 	wg.Done()
+}
+
+type diffType uint
+
+const (
+	_D_MTIME diffType = 1 << iota
+	_D_UID
+	_D_GID
+	_D_LINK
+	_D_XATTR
+	_D_CUSTOM
+)
+
+var diffTypeName map[diffType]string = map[diffType]string{
+	_D_MTIME:  "mtime",
+	_D_UID:    "uid",
+	_D_GID:    "gid",
+	_D_LINK:   "link",
+	_D_XATTR:  "xattr",
+	_D_CUSTOM: "custom",
+}
+
+func (d diffType) String() string {
+	return diffTypeName[d]
 }
 
 // return a comparator function that is optimized for the attributes we are
@@ -305,46 +316,49 @@ func makeComparators(opts *opt) fileqFunc {
 	eqv := make([]fileqFunc, 0, 6)
 
 	// We always have the most basic comparator: mtime
-	eqv = append(eqv, func(lhs, rhs *fio.Info) bool {
-		return lhs.Mtim.Equal(rhs.Mtim)
+	eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+		return lhs.Mtim.Equal(rhs.Mtim), _D_MTIME
 	})
 
 	// build out the rest of optional comparators
 	if !ignore(IGN_UID) {
-		eqv = append(eqv, func(lhs, rhs *fio.Info) bool {
-			return lhs.Uid == rhs.Uid
+		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+			return lhs.Uid == rhs.Uid, _D_UID
 		})
 	}
 	if !ignore(IGN_GID) {
-		eqv = append(eqv, func(lhs, rhs *fio.Info) bool {
-			return lhs.Gid == rhs.Gid
+		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+			return lhs.Gid == rhs.Gid, _D_GID
 		})
 	}
 	if !ignore(IGN_HARDLINK) {
-		eqv = append(eqv, func(lhs, rhs *fio.Info) bool {
-			return lhs.Nlink == rhs.Nlink
+		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+			return lhs.Nlink == rhs.Nlink, _D_LINK
 		})
 	}
 	if !ignore(IGN_XATTR) {
-		eqv = append(eqv, func(lhs, rhs *fio.Info) bool {
-			return lhs.Xattr.Equal(rhs.Xattr)
+		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+			return lhs.Xattr.Equal(rhs.Xattr), _D_XATTR
 		})
 	}
 
 	// we want potentially expensive comparisons to be done last.
 	if opts.deepEq != nil {
-		eqv = append(eqv, opts.deepEq)
+		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+			return opts.deepEq(lhs, rhs), _D_CUSTOM
+		})
 	}
 
 	// the final function will call each of these smol comparators
 	// one after the other.
-	return func(a, b *fio.Info) bool {
+	return func(a, b *fio.Info) (bool, diffType) {
 		for _, fp := range eqv {
-			if !fp(a, b) {
-				return false
+			ok, x := fp(a, b)
+			if !ok {
+				return false, x
 			}
 		}
-		return true
+		return true, 0
 	}
 }
 

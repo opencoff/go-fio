@@ -49,6 +49,7 @@ func ReadTest(fn string) ([]TestSuite, error) {
 		if len(part) == 0 || part[0] == '#' {
 			continue
 		}
+
 		if part[len(part)-1] == '\\' {
 			line += part[:len(part)-1]
 			continue

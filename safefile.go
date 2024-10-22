@@ -67,7 +67,7 @@ const (
 // 'nm' is the name of the final file; if 'ovwrite' is true,
 // then the file is overwritten if it exists.
 func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile, error) {
-	if st, err := os.Stat(nm); err == nil {
+	if st, err := Stat(nm); err == nil {
 		if (opts & OPT_OVERWRITE) == 0 {
 			return nil, fmt.Errorf("safefile: won't overwrite existing %s", nm)
 		}
@@ -131,6 +131,32 @@ func (sf *SafeFile) isOpen() bool {
 		return true
 	}
 	return false
+}
+
+var flag2str = []struct {
+	flag int
+	name string
+}{
+	{os.O_RDONLY, "rdonly"},
+	{os.O_WRONLY, "wronly"},
+	{os.O_RDWR, "rdwr"},
+	{os.O_APPEND, "append"},
+	{os.O_CREATE, "creat"},
+	{os.O_EXCL, "excl"},
+	{os.O_SYNC, "sync"},
+	{os.O_TRUNC, "trunc"},
+}
+
+func prflag(flag int) string {
+	var v []string
+
+	for i := range flag2str {
+		fl := &flag2str[i]
+		if fl.flag&flag > 0 {
+			v = append(v, fl.name)
+		}
+	}
+	return strings.Join(v, ",")
 }
 
 // Attempt to write everything in 'b' and don't proceed if there was
@@ -247,7 +273,7 @@ func randU32() uint32 {
 	return binary.LittleEndian.Uint32(b[:])
 }
 
-func flag2str(flag int) string {
+func xflag2str(flag int) string {
 	var v []string
 	if flag&os.O_RDONLY > 0 {
 		v = append(v, "rdonly")

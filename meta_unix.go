@@ -17,12 +17,11 @@ package fio
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"syscall"
 )
 
-func chown(dest string, _ string, fi fs.FileInfo) error {
+func chown(dest string, _ string, fi *Info) error {
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 		if err := syscall.Chown(dest, int(st.Uid), int(st.Gid)); err != nil {
 			return fmt.Errorf("chown: %w", err)
@@ -31,12 +30,12 @@ func chown(dest string, _ string, fi fs.FileInfo) error {
 	return nil
 }
 
-func chmod(dest string, _ string, fi fs.FileInfo) error {
+func chmod(dest string, _ string, fi *Info) error {
 	return os.Chmod(dest, fi.Mode())
 }
 
 // clone a symlink - ie we make the target point to the same one as src
-func clonelink(dest string, src string, fi fs.FileInfo) error {
+func clonelink(dest string, src string, fi *Info) error {
 	targ, err := os.Readlink(src)
 	if err != nil {
 		return fmt.Errorf("readlink: %w", err)
@@ -51,7 +50,7 @@ func clonelink(dest string, src string, fi fs.FileInfo) error {
 	return lclonexattr(dest, src, fi)
 }
 
-func clonexattr(dest, src string, _ fs.FileInfo) error {
+func clonexattr(dest, src string, _ *Info) error {
 	x, err := GetXattr(src)
 	if err != nil {
 		return err
@@ -61,7 +60,7 @@ func clonexattr(dest, src string, _ fs.FileInfo) error {
 }
 
 // clone the xattr of the symlink itself
-func lclonexattr(dest, src string, _ fs.FileInfo) error {
+func lclonexattr(dest, src string, _ *Info) error {
 	x, err := LgetXattr(src)
 	if err != nil {
 		return err

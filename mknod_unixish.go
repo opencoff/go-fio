@@ -17,15 +17,12 @@ package fio
 
 import (
 	"fmt"
-	"io/fs"
 	"syscall"
 )
 
-func mknod(dest string, src string, fi fs.FileInfo) error {
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		if err := syscall.Mknod(dest, uint32(fi.Mode()), int(st.Dev)); err != nil {
-			return fmt.Errorf("mknod: %w", err)
-		}
+func mknod(dest string, src string, fi *Info) error {
+	if err := syscall.Mknod(dest, uint32(fi.Mode()), int(fi.Dev)); err != nil {
+		return fmt.Errorf("mknod: %w", err)
 	}
 	if err := utimes(dest, src, fi); err != nil {
 		return err

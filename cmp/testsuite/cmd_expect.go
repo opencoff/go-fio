@@ -4,8 +4,9 @@ package main
 
 import (
 	"fmt"
-	cmp "github.com/opencoff/go-fio/cmp"
 	"path"
+
+	"github.com/opencoff/go-fio/cmp"
 )
 
 type expectCmd struct {
@@ -59,6 +60,9 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 			err = match(k, v, diff.Same)
 		case "funny":
 			err = match(k, v, diff.Funny)
+		}
+		if err != nil {
+			return fmt.Errorf("expect: %w", err)
 		}
 	}
 

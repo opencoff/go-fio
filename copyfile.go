@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 )
 
 // CopyFile copies files 'src' to 'dst' using the most efficient OS primitive
@@ -34,7 +35,7 @@ func CopyFile(dst, src string, perm fs.FileMode) error {
 	defer s.Close()
 
 	// never overwrite an existing file.
-	_, err = os.Stat(dst)
+	_, err = Stat(dst)
 	if err == nil {
 		return fmt.Errorf("copyfile: destination %s already exists", dst)
 	}
@@ -52,7 +53,7 @@ func CopyFile(dst, src string, perm fs.FileMode) error {
 	return d.Close()
 }
 
-type op func(dest, src string, fi fs.FileInfo) error
+type op func(dest, src string, fi *Info) error
 
 // order of applying these is important; we can't update
 // certain attributes if we're not the owner. So, we have
@@ -65,10 +66,10 @@ var _Mdupdaters = []op{
 }
 
 // update all the metadata
-func updateMeta(dest, src string, fi fs.FileInfo) error {
+func updateMeta(dest, src string, fi *Info) error {
 	for _, fp := range _Mdupdaters {
 		if err := fp(dest, src, fi); err != nil {
-			return fmt.Errorf("clonefile: %w", err)
+			return err
 		}
 	}
 	return nil
@@ -104,7 +105,7 @@ func CloneFile(dst, src string) error {
 
 	switch mode.Type() {
 	case fs.ModeDir:
-		if err = os.MkdirAll(dst, mode&fs.ModePerm); err != nil {
+		if err = os.MkdirAll(dst, mode&fs.ModePerm|0100); err != nil {
 			return err
 		}
 
@@ -128,7 +129,13 @@ func CloneFile(dst, src string) error {
 }
 
 // copy a regular file to another regular file
-func copyRegular(dst string, s *os.File, fi fs.FileInfo) error {
+func copyRegular(dst string, s *os.File, fi *Info) error {
+	// make the intermediate dirs of the dest
+	dn := filepath.Dir(dst)
+	if err := os.MkdirAll(dn, 0100|fs.ModePerm&fi.Mode()); err != nil {
+		return fmt.Errorf("clonefile: %w", err)
+	}
+
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
 	d, err := NewSafeFile(dst, OPT_COW, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
@@ -141,12 +148,16 @@ func copyRegular(dst string, s *os.File, fi fs.FileInfo) error {
 		return fmt.Errorf("clonefile: %w", err)
 	}
 
-	// now set mtime/ctime, mode etc.
-	if err = updateMeta(d.Name(), s.Name(), fi); err != nil {
-		return err
+	if err = d.Close(); err != nil {
+		return fmt.Errorf("clonefile: %w", err)
 	}
 
-	return d.Close()
+	// now set mtime/ctime, mode etc.
+	if err = updateMeta(dst, s.Name(), fi); err != nil {
+		return fmt.Errorf("clonefile: %w", err)
+	}
+
+	return nil
 }
 
 // CopyFd copies open files 'src' to 'dst' using the most efficient OS
