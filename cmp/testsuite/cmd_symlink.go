@@ -50,16 +50,28 @@ func (t *symlinkCmd) symlink(key string, vals []string, env *TestEnv) error {
 		}
 
 		newnm := nm[:i]
-		oldnm := nm[i:]
+		oldnm := nm[i+1:]
 
 		if !path.IsAbs(oldnm) {
 			oldnm = path.Join(base, oldnm)
 		}
 
-		if exists, err := FileExists(oldnm); err != nil {
+		if !path.IsAbs(newnm) {
+			newnm = path.Join(base, newnm)
+		}
+
+		/*
+			if exists, err := FileExists(oldnm); err != nil {
+				return err
+			} else if !exists {
+				return fmt.Errorf("%s: doesn't exist", oldnm)
+			}
+		*/
+
+		// make parent dirs
+		dir := path.Dir(newnm)
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err
-		} else if !exists {
-			return fmt.Errorf("%s: doesn't exist", oldnm)
 		}
 
 		env.log.Debug("symlink %s --> %s", oldnm, newnm)

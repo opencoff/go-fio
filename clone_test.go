@@ -15,6 +15,7 @@ package fio
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"testing"
@@ -106,6 +107,10 @@ func mdEqual(newf, oldf string) error {
 		return err
 	}
 
+	if (a.Mod & ^fs.ModePerm) != (b.Mod & ^fs.ModePerm) {
+		return fmt.Errorf("mode: exp %#x, saw %#x", a.Mod, b.Mod)
+	}
+
 	if a.Nlink != b.Nlink {
 		return fmt.Errorf("nlink: exp %d, saw %d", a.Nlink, b.Nlink)
 	}
@@ -125,8 +130,10 @@ func mdEqual(newf, oldf string) error {
 		return fmt.Errorf("rdev: exp %d, saw %d", a.Rdev, b.Rdev)
 	}
 
-	if !a.Mtim.Equal(b.Mtim) {
-		return fmt.Errorf("mtime:\n\texp %s\n\tsaw %s", a.Mtim, b.Mtim)
+	if a.Mode().Type() != fs.ModeSymlink {
+		if !a.Mtim.Equal(b.Mtim) {
+			return fmt.Errorf("mtime:\n\texp %s\n\tsaw %s", a.Mtim, b.Mtim)
+		}
 	}
 
 	done := make(map[string]bool)

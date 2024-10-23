@@ -338,6 +338,9 @@ func makeComparators(opts *opt) fileqFunc {
 
 	// We always have the most basic comparator: mtime
 	eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
+		if lhs.Mode().Type() == fs.ModeSymlink {
+			return true, _D_MTIME
+		}
 		return lhs.Mtim.Equal(rhs.Mtim), _D_MTIME
 	})
 

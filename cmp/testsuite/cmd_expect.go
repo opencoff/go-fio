@@ -4,7 +4,6 @@ package main
 
 import (
 	"fmt"
-	"path"
 
 	"github.com/opencoff/go-fio/cmp"
 )
@@ -64,7 +63,7 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 			err = match(k, v, diff.Funny)
 		}
 		if err != nil {
-			return fmt.Errorf("expect: %w", err)
+			return err
 		}
 	}
 
@@ -98,28 +97,6 @@ func match(key string, exp, have []string) error {
 	for _, nm := range exp {
 		if _, ok := h[nm]; !ok {
 			return fmt.Errorf("%s exp to see %s", key, nm)
-		}
-	}
-	return nil
-}
-
-func (t *expectCmd) mutate(key string, vals []string, env *TestEnv) error {
-	base := env.TestRoot
-	for _, nm := range vals {
-		if !path.IsAbs(nm) {
-			nm = path.Join(base, key, nm)
-		}
-
-		if exists, err := FileExists(nm); err != nil {
-			return err
-		} else if !exists {
-			return fmt.Errorf("%s: doesn't exist", nm)
-		}
-
-		env.log.Debug("mutate %s", nm)
-
-		if err := mutate(nm, minMutation, maxMutation); err != nil {
-			return fmt.Errorf("%s: %w", nm, err)
 		}
 	}
 	return nil

@@ -16,24 +16,24 @@
 package fio
 
 import (
-	"fmt"
+	"io/fs"
 	"os"
 )
 
-func utimes(dest string, _ string, fi *Info) error {
-	if err := os.Chtimes(dest, fi.Atim, fi.Mtim); err != nil {
-		return fmt.Errorf("utimes: %w", err)
+func clonetimes(dest string, fi *Info) error {
+
+	// The situation with utimes and symlinks is broken across
+	// platforms:
+	//  - darwin and bsd's don't have nano-second utimes() or lutimes()
+	//  - linux has 4 differnt variants of utimes/lutimes/utimensat etc.
+	//  - then there is the confusing mess of struct timespec vs. struct timeval
+	//    (one has ns resolution while the other has us).
+	//
+	//  So for now we ignore symlinks and atime/mtime
+	if fi.Mode().Type() != fs.ModeSymlink {
+		if err := os.Chtimes(dest, fi.Atim, fi.Mtim); err != nil {
+			return err
+		}
 	}
 	return nil
-	/*
-		tv := []unix.Timeval{
-			unix.NsecToTimeval(fi.Atim.Nano()),
-			unix.NsecToTimeval(fi.Mtim.Nano()),
-		}
-
-		if err := unix.Lutimes(dest, tv); err != nil {
-			return fmt.Errorf("utimes: set: %w", err)
-		}
-		return nil
-	*/
 }

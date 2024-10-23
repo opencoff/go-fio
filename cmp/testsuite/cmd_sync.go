@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/opencoff/go-fio"
@@ -30,9 +31,11 @@ func (t *syncCmd) Run(env *TestEnv, args []string) error {
 	// first adjtime for all non-dir entries
 	now := env.Start
 	err := walk.WalkFunc(dirs, wo, func(fi *fio.Info) error {
-		err := os.Chtimes(fi.Name(), now, now)
-		if err != nil {
-			return fmt.Errorf("adjtime: %w", err)
+		if fi.Mode().Type() != fs.ModeSymlink {
+			err := os.Chtimes(fi.Name(), now, now)
+			if err != nil {
+				return fmt.Errorf("adjtime: %w", err)
+			}
 		}
 		return nil
 	})

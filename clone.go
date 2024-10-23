@@ -89,6 +89,7 @@ func CloneFile(dst, src string) error {
 		err = fmt.Errorf("clonefile: %s: unsupported type %#x", src, mode)
 	}
 
+done:
 	if err == nil {
 		// update metadata; caller is responsible for deep clone of
 		// a directory.
@@ -96,7 +97,6 @@ func CloneFile(dst, src string) error {
 	}
 
 	// everyone must have their attrs cloned
-done:
 	if err != nil {
 		return fmt.Errorf("clonefile: %w", err)
 	}
@@ -148,10 +148,6 @@ func cloneugid(dst string, fi *Info) error {
 
 func clonemode(dst string, fi *Info) error {
 	return os.Chmod(dst, fi.Mode())
-}
-
-func clonetimes(dst string, fi *Info) error {
-	return os.Chtimes(dst, fi.Atim, fi.Mtim)
 }
 
 func updateMeta(dst string, fi *Info) error {
