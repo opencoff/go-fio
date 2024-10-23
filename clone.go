@@ -20,34 +20,12 @@ import (
 	"path/filepath"
 )
 
-type op func(dest, src string, fi *Info) error
-
-// order of applying these is important; we can't update
-// certain attributes if we're not the owner. So, we have
-// to do it in the end.
-var _Mdupdaters = []op{
-	clonexattr,
-	chmod,
-	chown,
-	utimes,
-}
-
-// update all the metadata
-func updateMeta(dest, src string, fi *Info) error {
-	for _, fp := range _Mdupdaters {
-		if err := fp(dest, src, fi); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // CloneMetadata clones all the metadata from src to dst: the metadata
 // is atime, mtime, uid, gid, mode/perm, xattr
 func CloneMetadata(dst, src string) error {
 	fi, err := Lstat(src)
 	if err == nil {
-		err = updateMeta(dst, src, fi)
+		err = updateMeta(dst, fi)
 	}
 
 	if err != nil {
@@ -57,9 +35,11 @@ func CloneMetadata(dst, src string) error {
 }
 
 // UpdateMetadata writes new metadata of 'dst' from 'fi'
+// The metadata that will be updated includes atime, mtime, uid/gid,
+// mode/perm, xattr
 func UpdateMetadata(dst string, fi *Info) error {
-	if err := updateMeta(dst, dst, fi); err != nil {
-		return fmt.Errorf("clonemeta: %w", err)
+	if err := updateMeta(dst, fi); err != nil {
+		return fmt.Errorf("updatemeta: %w", err)
 	}
 	return nil
 }
@@ -89,24 +69,19 @@ func CloneFile(dst, src string) error {
 
 	mode := fi.Mode()
 	if mode.IsRegular() {
-		return copyRegular(dst, s, fi)
+		err = copyRegular(dst, s, fi)
+		goto done
 	}
 
 	switch mode.Type() {
 	case fs.ModeDir:
-		if err = os.MkdirAll(dst, mode&fs.ModePerm|0100); err != nil {
-			return err
-		}
-
-		// update metadata; caller is responsible for deep clone of
-		// a directory.
-		err = updateMeta(dst, src, fi)
+		err = os.MkdirAll(dst, mode&fs.ModePerm|0100)
 
 	case fs.ModeSymlink:
 		err = clonelink(dst, src, fi)
 
 	case fs.ModeDevice, fs.ModeNamedPipe:
-		err = mknod(dst, src, fi)
+		err = mknod(dst, fi)
 
 	//case ModeSocket: XXX Add named socket support
 
@@ -114,7 +89,18 @@ func CloneFile(dst, src string) error {
 		err = fmt.Errorf("clonefile: %s: unsupported type %#x", src, mode)
 	}
 
-	return err
+	if err == nil {
+		// update metadata; caller is responsible for deep clone of
+		// a directory.
+		err = updateMeta(dst, fi)
+	}
+
+	// everyone must have their attrs cloned
+done:
+	if err != nil {
+		return fmt.Errorf("clonefile: %w", err)
+	}
+	return nil
 }
 
 // copy a regular file to another regular file
@@ -122,29 +108,57 @@ func copyRegular(dst string, s *os.File, fi *Info) error {
 	// make the intermediate dirs of the dest
 	dn := filepath.Dir(dst)
 	if err := os.MkdirAll(dn, 0100|fs.ModePerm&fi.Mode()); err != nil {
-		return fmt.Errorf("clonefile: %w", err)
+		return err
 	}
 
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
 	d, err := NewSafeFile(dst, OPT_COW, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
 	if err != nil {
-		return fmt.Errorf("clonefile: %w", err)
+		return err
 	}
 
 	defer d.Abort()
 	if err = copyFile(d.File, s); err != nil {
-		return fmt.Errorf("clonefile: %w", err)
+		return err
 	}
 
-	if err = d.Close(); err != nil {
-		return fmt.Errorf("clonefile: %w", err)
-	}
+	return d.Close()
+}
 
-	// now set mtime/ctime, mode etc.
-	if err = updateMeta(dst, s.Name(), fi); err != nil {
-		return fmt.Errorf("clonefile: %w", err)
-	}
+// a cloner clones a specific attribute
+type cloner func(dst string, src *Info) error
 
+// all fs entries will have these attrs cloned.
+// We stack mtime update to the end.
+var mdUpdaters = []cloner{
+	clonexattr,
+	cloneugid,
+	clonemode,
+	clonetimes,
+}
+
+func clonexattr(dst string, fi *Info) error {
+	return LreplaceXattr(dst, fi.Xattr)
+}
+
+func cloneugid(dst string, fi *Info) error {
+	return os.Lchown(dst, int(fi.Uid), int(fi.Gid))
+}
+
+func clonemode(dst string, fi *Info) error {
+	return os.Chmod(dst, fi.Mode())
+}
+
+func clonetimes(dst string, fi *Info) error {
+	return os.Chtimes(dst, fi.Atim, fi.Mtim)
+}
+
+func updateMeta(dst string, fi *Info) error {
+	for _, fp := range mdUpdaters {
+		if err := fp(dst, fi); err != nil {
+			return err
+		}
+	}
 	return nil
 }

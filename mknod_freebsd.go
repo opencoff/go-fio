@@ -21,12 +21,9 @@ import (
 	"syscall"
 )
 
-func mknod(dest string, src string, fi *Info) error {
+func mknod(dest string, fi *Info) error {
 	if err := syscall.Mknod(dest, uint32(fi.Mode()), fi.Dev); err != nil {
 		return fmt.Errorf("mknod: %w", err)
 	}
-	if err := utimes(dest, src, fi); err != nil {
-		return err
-	}
-	return clonexattr(dest, src, fi)
+	return nil
 }

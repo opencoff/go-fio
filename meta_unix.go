@@ -18,21 +18,7 @@ package fio
 import (
 	"fmt"
 	"os"
-	"syscall"
 )
-
-func chown(dest string, _ string, fi *Info) error {
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		if err := syscall.Chown(dest, int(st.Uid), int(st.Gid)); err != nil {
-			return fmt.Errorf("chown: %w", err)
-		}
-	}
-	return nil
-}
-
-func chmod(dest string, _ string, fi *Info) error {
-	return os.Chmod(dest, fi.Mode())
-}
 
 // clone a symlink - ie we make the target point to the same one as src
 func clonelink(dest string, src string, fi *Info) error {
@@ -44,27 +30,5 @@ func clonelink(dest string, src string, fi *Info) error {
 		return fmt.Errorf("symlink: %w", err)
 	}
 
-	if err := utimes(dest, src, fi); err != nil {
-		return err
-	}
-	return lclonexattr(dest, src, fi)
-}
-
-func clonexattr(dest, src string, _ *Info) error {
-	x, err := GetXattr(src)
-	if err != nil {
-		return err
-	}
-
-	return ReplaceXattr(dest, x)
-}
-
-// clone the xattr of the symlink itself
-func lclonexattr(dest, src string, _ *Info) error {
-	x, err := LgetXattr(src)
-	if err != nil {
-		return err
-	}
-
-	return LreplaceXattr(dest, x)
+	return nil
 }

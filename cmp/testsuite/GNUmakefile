@@ -29,6 +29,10 @@ ifeq ($(CONCURRENT),1)
 	serial :=
 endif
 
+ifeq ($(V),1)
+	log := --log-stdout
+endif
+
 .PHONY: clean $(trunner)
 
 all: $(trunner)
@@ -42,7 +46,7 @@ test: $(trunner)
 	@echo "no tests in $(testdir)"
 else
 test: $(trunner)
-	$(trunner) --log-stdout -p $(serial) $(tests)
+	$(trunner) $(log) -p $(serial) $(tests)
 endif
 
 clean:
