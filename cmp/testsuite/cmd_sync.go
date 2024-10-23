@@ -18,7 +18,7 @@ func (t *syncCmd) Reset() {
 }
 
 func (t *syncCmd) Run(env *TestEnv, args []string) error {
-	wo := &walk.Options{
+	wo := walk.Options{
 		Concurrency: 8,
 		Type:        walk.ALL & ^walk.DIR,
 	}

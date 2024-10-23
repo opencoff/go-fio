@@ -398,9 +398,9 @@ type treeopt struct {
 // WithWalkOptions uses 'wo' as the option for walk.Walk(); it
 // describes a caller desired traversal of the file system with
 // the requisite input and output filters
-func WithWalkOptions(wo *walk.Options) TreeOpt {
+func WithWalkOptions(wo walk.Options) TreeOpt {
 	return func(o *treeopt) {
-		o.Options = *wo
+		o.Options = wo
 
 		// make sure we receive all input
 		if o.Type == 0 {
@@ -448,7 +448,7 @@ func (t *Tree) gather() ([]entry, map[string]*fio.Info, error) {
 	list := make([]entry, 0, 16)
 
 	// setup a walk instance and gather entries
-	och, ech := walk.Walk([]string{t.dir}, &t.treeopt.Options)
+	och, ech := walk.Walk([]string{t.dir}, t.treeopt.Options)
 
 	var errs []error
 	var wg sync.WaitGroup

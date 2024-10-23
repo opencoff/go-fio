@@ -114,12 +114,12 @@ func makeEnv(tname string, cfg *config) (*TestEnv, error) {
 		Type: walk.ALL,
 	}
 
-	lt, err := cmp.NewTree(lhs, cmp.WithWalkOptions(&wo))
+	lt, err := cmp.NewTree(lhs, cmp.WithWalkOptions(wo))
 	if err != nil {
 		return nil, fmt.Errorf("%s: tree: %w", lhs, err)
 	}
 
-	rt, err := cmp.NewTree(rhs, cmp.WithWalkOptions(&wo))
+	rt, err := cmp.NewTree(rhs, cmp.WithWalkOptions(wo))
 	if err != nil {
 		return nil, fmt.Errorf("%s: tree: %w", rhs, err)
 	}

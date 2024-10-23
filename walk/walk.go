@@ -150,7 +150,7 @@ func (t Type) String() string {
 // Walk traverses the entries in 'names' in a concurrent fashion and returns
 // results in a channel of *fio.Info. The caller must service the channel. Any errors
 // encountered during the walk are returned in the error channel.
-func Walk(names []string, opt *Options) (chan *fio.Info, chan error) {
+func Walk(names []string, opt Options) (chan *fio.Info, chan error) {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
@@ -181,7 +181,7 @@ func Walk(names []string, opt *Options) (chan *fio.Info, chan error) {
 // for entries that match criteria in 'opt'. The apply function must be concurrency-safe
 // ie it will be called concurrently from multiple go-routines. Any errors reported by
 // 'apply' will be returned from WalkFunc().
-func WalkFunc(names []string, opt *Options, apply func(fi *fio.Info) error) error {
+func WalkFunc(names []string, opt Options, apply func(fi *fio.Info) error) error {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
@@ -222,13 +222,10 @@ func WalkFunc(names []string, opt *Options, apply func(fi *fio.Info) error) erro
 	return nil
 }
 
-func newWalkState(opt *Options) *walkState {
-	if opt == nil {
-		opt = &Options{}
-	}
+func newWalkState(opt Options) *walkState {
 
 	d := &walkState{
-		Options: *opt,
+		Options: opt,
 		ch:      make(chan string, opt.Concurrency),
 		errch:   make(chan error, opt.Concurrency),
 
