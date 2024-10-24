@@ -143,6 +143,15 @@ func (ii *Info) IsRegular() bool {
 	return m.IsRegular()
 }
 
+// IsSameFs returns true if a and b represent file entries on the
+// same file system
+func (a *Info) IsSameFS(b *Info) bool {
+	if a.Dev == b.Dev && a.Rdev == b.Rdev {
+		return true
+	}
+	return false
+}
+
 // Sys returns the platform specific info - in our case it
 // returns a pointer to the underlying Info instance.
 func (ii *Info) Sys() any {

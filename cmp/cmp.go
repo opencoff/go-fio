@@ -423,10 +423,10 @@ type Tree struct {
 func NewTree(nm string, opts ...TreeOpt) (*Tree, error) {
 	fi, err := fio.Lstat(nm)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cmp: %s: %w", nm, err)
 	}
 	if !fi.IsDir() {
-		return nil, fmt.Errorf("tree: %s is not a dir", nm)
+		return nil, fmt.Errorf("cmp: %s is not a dir", nm)
 	}
 
 	o := &treeopt{}

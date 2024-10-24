@@ -39,7 +39,7 @@ func copyFile(dst, src *os.File) error {
 
 	st, err := src.Stat()
 	if err != nil {
-		return fmt.Errorf("safefile: %w", err)
+		return fmt.Errorf("stat %s: %w", src.Name(), err)
 	}
 
 	// Fallback to copy_file_range(2)
@@ -49,10 +49,10 @@ func copyFile(dst, src *os.File) error {
 		n := min(_ioChunkSize, int(sz))
 		m, err := unix.CopyFileRange(s, &roff, d, &woff, n, 0)
 		if err != nil {
-			return fmt.Errorf("safefile: copy: %w", err)
+			return fmt.Errorf("copyrange: %s %s: %w", src.Name(), dst.Name(), err)
 		}
 		if m == 0 {
-			return fmt.Errorf("safefile: zero sized copy of %s", src.Name())
+			return fmt.Errorf("copyrange: %s %s: zero sized transfer", src.Name(), dst.Name())
 		}
 		sz -= int64(m)
 		roff += int64(m)
@@ -60,7 +60,7 @@ func copyFile(dst, src *os.File) error {
 	}
 	_, err = dst.Seek(0, os.SEEK_SET)
 	if err != nil {
-		return fmt.Errorf("safefile: seek: %w", err)
+		return fmt.Errorf("seek %s: %w", dst.Name(), err)
 	}
 	return nil
 }

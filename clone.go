@@ -49,12 +49,6 @@ func UpdateMetadata(dst string, fi *Info) error {
 // by the OS and Filesystem. It will fall back to using copy via mmap(2) on
 // systems that don't have CoW semantics.
 func CloneFile(dst, src string) error {
-	// never overwrite an existing file.
-	_, err := Lstat(dst)
-	if err == nil {
-		return fmt.Errorf("clonefile: destination %s already exists", dst)
-	}
-
 	fi, err := Lstat(src)
 	if err != nil {
 		return fmt.Errorf("clonefile: %w", err)
@@ -98,7 +92,7 @@ done:
 
 	// everyone must have their attrs cloned
 	if err != nil {
-		return fmt.Errorf("clonefile: %w", err)
+		return fmt.Errorf("clonefile: %s from %s: %w", dst, src, err)
 	}
 	return nil
 }
@@ -113,17 +107,28 @@ func copyRegular(dst string, s *os.File, fi *Info) error {
 
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
-	d, err := NewSafeFile(dst, OPT_COW, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
+	d, err := NewSafeFile(dst, OPT_COW|OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	defer d.Abort()
+
+	di, err := Lstat(d.Name())
 	if err != nil {
 		return err
 	}
 
-	defer d.Abort()
-	if err = copyFile(d.File, s); err != nil {
-		return err
+	// if src and dest are on same fs, copy using the best OS primitive
+	if di.IsSameFS(fi) {
+		err = copyFile(d.File, s)
+	} else {
+		err = copyViaMmap(d.File, s)
 	}
 
-	return d.Close()
+	if err == nil {
+		err = d.Close()
+	}
+	return err
 }
 
 // a cloner clones a specific attribute

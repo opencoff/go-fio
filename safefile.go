@@ -114,7 +114,7 @@ func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile,
 			old.Close()
 
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("safefile: %s: %w", nm, err)
 			}
 		}
 	}
