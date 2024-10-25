@@ -386,9 +386,9 @@ func makeComparators(opts *opt) fileqFunc {
 	}
 }
 
-// TreeOpt is an option operator for constructing a filesystem tree
+// TreeOption is an option operator for constructing a filesystem tree
 // object (Tree)
-type TreeOpt func(o *treeopt)
+type TreeOption func(o *treeopt)
 
 // treeopt is options for the filesys tree
 type treeopt struct {
@@ -398,7 +398,7 @@ type treeopt struct {
 // WithWalkOptions uses 'wo' as the option for walk.Walk(); it
 // describes a caller desired traversal of the file system with
 // the requisite input and output filters
-func WithWalkOptions(wo walk.Options) TreeOpt {
+func WithWalkOptions(wo walk.Options) TreeOption {
 	return func(o *treeopt) {
 		o.Options = wo
 
@@ -420,7 +420,7 @@ type Tree struct {
 // NewTree creates a new file system traversal. It has no
 // methods or interfaces for public use. It's use is to be
 // an input to DirCmp()
-func NewTree(nm string, opts ...TreeOpt) (*Tree, error) {
+func NewTree(nm string, opts ...TreeOption) (*Tree, error) {
 	fi, err := fio.Lstat(nm)
 	if err != nil {
 		return nil, fmt.Errorf("cmp: %s: %w", nm, err)

@@ -8,7 +8,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/opencoff/go-fio"
+	"github.com/opencoff/go-fio/clone"
 	flag "github.com/opencoff/pflag"
 )
 
@@ -76,7 +76,7 @@ func (t *mkfileCmd) cloneLhs(args []string, env *TestEnv) error {
 		lhs := path.Join(base, "lhs", nm)
 		rhs := path.Join(base, "rhs", nm)
 		env.log.Debug("mkfile clone %s -> %s", lhs, rhs)
-		if err := fio.CloneFile(rhs, lhs); err != nil {
+		if err := clone.File(rhs, lhs); err != nil {
 			return fmt.Errorf("%s: %w", rhs, err)
 		}
 	}

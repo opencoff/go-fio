@@ -181,7 +181,7 @@ func mksym(tmpdir string, src, targ string) error {
 func newWalk(tx *test) (map[string]fs.FileInfo, error) {
 	nm := os.ExpandEnv(tx.dir)
 	names := [...]string{nm}
-	opt := &Options{
+	opt := Options{
 		FollowSymlinks: false,
 		OneFS:          false,
 		Type:           tx.typ,

@@ -13,15 +13,16 @@
 
 //go:build unix
 
-package fio
+package clone
 
 import (
 	"io/fs"
 	"os"
+
+	"github.com/opencoff/go-fio"
 )
 
-func clonetimes(dest string, fi *Info) error {
-
+func clonetimes(dest string, fi *fio.Info) error {
 	// The situation with utimes and symlinks is broken across
 	// platforms:
 	//  - darwin and bsd's don't have nano-second utimes() or lutimes()

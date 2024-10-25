@@ -13,20 +13,22 @@
 
 //go:build unix
 
-package fio
+package clone
 
 import (
 	"os"
+
+	"github.com/opencoff/go-fio"
 )
 
 // clone a symlink - ie we make the target point to the same one as src
-func clonelink(dst string, src string, fi *Info) error {
+func clonelink(dst string, src string, fi *fio.Info) error {
 	targ, err := os.Readlink(src)
 	if err != nil {
-		return &CloneError{"readlink", src, dst, err}
+		return &Error{"readlink", src, dst, err}
 	}
 	if err = os.Symlink(targ, dst); err != nil {
-		return &CloneError{"symlink", src, dst, err}
+		return &Error{"symlink", src, dst, err}
 	}
 
 	return nil

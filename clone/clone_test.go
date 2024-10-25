@@ -11,7 +11,7 @@
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
 
-package fio
+package clone
 
 import (
 	"fmt"
@@ -19,6 +19,8 @@ import (
 	"os"
 	"path"
 	"testing"
+
+	"github.com/opencoff/go-fio"
 )
 
 func TestCloneDir(t *testing.T) {
@@ -29,15 +31,15 @@ func TestCloneDir(t *testing.T) {
 	err := os.MkdirAll(nm, 0700)
 	assert(err == nil, "mkdir: %s", err)
 
-	x := Xattr{
+	x := fio.Xattr{
 		"user.dir.name": nm,
 	}
 
-	err = SetXattr(nm, x)
+	err = fio.SetXattr(nm, x)
 	assert(err == nil, "setxattr: %s", err)
 
 	dst := path.Join(tmp, "newdir")
-	err = CloneFile(dst, nm)
+	err = File(dst, nm)
 	assert(err == nil, "clonedir: %s", err)
 
 	// now fetch all the attrs of newdir and make sure they're identical
@@ -54,15 +56,15 @@ func TestCloneRegFile(t *testing.T) {
 	err := mkfilex(nm)
 	assert(err == nil, "test file %s: %s", nm, err)
 
-	x := Xattr{
+	x := fio.Xattr{
 		"user.file.name": nm,
 	}
 
-	err = SetXattr(nm, x)
+	err = fio.SetXattr(nm, x)
 	assert(err == nil, "setxattr: %s", err)
 
 	dst := path.Join(tmp, "newfile")
-	err = CloneFile(dst, nm)
+	err = File(dst, nm)
 	assert(err == nil, "clonereg: %s", err)
 
 	// now fetch all the attrs of newdir and make sure they're identical
@@ -85,7 +87,7 @@ func TestCloneSymlink(t *testing.T) {
 	assert(err == nil, "symlink: %s", err)
 
 	nm2 := path.Join(tmp, "new-link")
-	err = CloneFile(nm2, newnm)
+	err = File(nm2, newnm)
 	assert(err == nil, "clonelink: %s", err)
 
 	// verify that the link contents are readable
@@ -98,11 +100,11 @@ func TestCloneSymlink(t *testing.T) {
 }
 
 func mdEqual(newf, oldf string) error {
-	a, err := Lstat(oldf)
+	a, err := fio.Lstat(oldf)
 	if err != nil {
 		return err
 	}
-	b, err := Lstat(newf)
+	b, err := fio.Lstat(newf)
 	if err != nil {
 		return err
 	}

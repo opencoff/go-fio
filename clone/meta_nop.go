@@ -13,22 +13,24 @@
 
 //go:build !unix
 
-package fio
+package clone
 
 import (
 	"fmt"
 	"io/fs"
+
+	"github.com/opencoff/go-fio"
 )
 
-func clonetimes(dst string, fi *Info) error {
-	return &CloneError{"clonetimes", fi.Name(), dst, err}
+func clonetimes(dst string, fi *fio.Info) error {
+	return &Error{"clonetimes", fi.Name(), dst, err}
 }
 
-func mknod(dst string, src string, fi *Info) error {
-	return &CloneError{"mknod", src, dst, err}
+func mknod(dst string, src string, fi *fio.Info) error {
+	return &Error{"mknod", src, dst, err}
 }
 
 // clone a symlink - ie we make the target point to the same one as src
-func clonelink(dst string, src string, fi *Info) error {
-	return &CloneError{"clonelink", src, dst, err}
+func clonelink(dst string, src string, fi *fio.Info) error {
+	return &Error{"clonelink", src, dst, err}
 }

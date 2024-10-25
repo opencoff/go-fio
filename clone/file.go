@@ -11,21 +11,23 @@
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
 
-package fio
+package clone
 
 import (
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/opencoff/go-fio"
 )
 
 // CloneMetadata clones all the metadata from src to dst: the metadata
 // is atime, mtime, uid, gid, mode/perm, xattr
-func CloneMetadata(dst, src string) error {
-	fi, err := Lstat(src)
+func Metadata(dst, src string) error {
+	fi, err := fio.Lstat(src)
 	if err != nil {
-		return &CloneError{"stat-src", src, dst, err}
+		return &Error{"stat-src", src, dst, err}
 	}
 
 	return updateMeta(dst, fi)
@@ -34,23 +36,23 @@ func CloneMetadata(dst, src string) error {
 // UpdateMetadata writes new metadata of 'dst' from 'fi'
 // The metadata that will be updated includes atime, mtime, uid/gid,
 // mode/perm, xattr
-func UpdateMetadata(dst string, fi *Info) error {
+func UpdateMetadata(dst string, fi *fio.Info) error {
 	return updateMeta(dst, fi)
 }
 
-// CloneFile copies src to dst - including all copyable file attributes
-// and xattr. CloneFile will use the best available CoW facilities provided
+// File clones src to dst - including all clonable file attributes
+// and xattr. File will use the best available CoW facilities provided
 // by the OS and Filesystem. It will fall back to using copy via mmap(2) on
 // systems that don't have CoW semantics.
-func CloneFile(dst, src string) error {
-	fi, err := Lstat(src)
+func File(dst, src string) error {
+	fi, err := fio.Lstat(src)
 	if err != nil {
-		return &CloneError{"stat-src", src, dst, err}
+		return &Error{"stat-src", src, dst, err}
 	}
 
 	s, err := os.Open(src)
 	if err != nil {
-		return &CloneError{"open-src", src, dst, err}
+		return &Error{"open-src", src, dst, err}
 	}
 
 	defer s.Close()
@@ -66,24 +68,24 @@ func CloneFile(dst, src string) error {
 	switch mode.Type() {
 	case fs.ModeDir:
 		if err = os.MkdirAll(dst, mode&fs.ModePerm|0100); err != nil {
-			return &CloneError{"mkdir", src, dst, err}
+			return &Error{"mkdir", src, dst, err}
 		}
 
 	case fs.ModeSymlink:
 		if err = clonelink(dst, src, fi); err != nil {
-			return &CloneError{"clonelink", src, dst, err}
+			return &Error{"clonelink", src, dst, err}
 		}
 
 	case fs.ModeDevice:
 		if err = mknod(dst, fi); err != nil {
-			return &CloneError{"mknod", src, dst, err}
+			return &Error{"mknod", src, dst, err}
 		}
 
 	//case ModeSocket: XXX Add named socket support
 
 	default:
 		err = fmt.Errorf("unsupported type %#x", mode)
-		return &CloneError{"file-type", src, dst, err}
+		return &Error{"file-type", src, dst, err}
 	}
 
 done:
@@ -91,32 +93,32 @@ done:
 }
 
 // copy a regular file to another regular file
-func copyRegular(dst string, s *os.File, fi *Info) error {
+func copyRegular(dst string, s *os.File, fi *fio.Info) error {
 	// make the intermediate dirs of the dest
 	dn := filepath.Dir(dst)
 	if err := os.MkdirAll(dn, 0100|fs.ModePerm&fi.Mode()); err != nil {
-		return &CloneError{"mkdir", s.Name(), dst, err}
+		return &Error{"mkdir", s.Name(), dst, err}
 	}
 
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
-	d, err := NewSafeFile(dst, OPT_COW|OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
+	d, err := fio.NewSafeFile(dst, fio.OPT_COW|fio.OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
 	if err != nil {
-		return &CloneError{"safefile", s.Name(), dst, err}
+		return &Error{"safefile", s.Name(), dst, err}
 	}
 	defer d.Abort()
 
-	if err = copyFile(d.File, s); err != nil {
-		return &CloneError{"copyfile", s.Name(), dst, err}
+	if err = fio.CopyFd(d.File, s); err != nil {
+		return &Error{"copyfile", s.Name(), dst, err}
 	}
 	if err = d.Close(); err != nil {
-		return &CloneError{"close", s.Name(), dst, err}
+		return &Error{"close", s.Name(), dst, err}
 	}
 	return nil
 }
 
 // a cloner clones a specific attribute
-type cloner func(dst string, src *Info) error
+type cloner func(dst string, src *fio.Info) error
 
 // all fs entries will have these attrs cloned.
 // We stack mtime update to the end.
@@ -127,31 +129,31 @@ var mdUpdaters = []cloner{
 	clonetimes,
 }
 
-func clonexattr(dst string, fi *Info) error {
-	if err := LreplaceXattr(dst, fi.Xattr); err != nil {
-		return &CloneError{"replace-xattr", fi.Name(), dst, err}
+func clonexattr(dst string, fi *fio.Info) error {
+	if err := fio.LreplaceXattr(dst, fi.Xattr); err != nil {
+		return &Error{"replace-xattr", fi.Name(), dst, err}
 	}
 	return nil
 }
 
-func cloneugid(dst string, fi *Info) error {
+func cloneugid(dst string, fi *fio.Info) error {
 	if err := os.Lchown(dst, int(fi.Uid), int(fi.Gid)); err != nil {
-		return &CloneError{"lchown", fi.Name(), dst, err}
+		return &Error{"lchown", fi.Name(), dst, err}
 	}
 	return nil
 }
 
-func clonemode(dst string, fi *Info) error {
+func clonemode(dst string, fi *fio.Info) error {
 	if err := os.Chmod(dst, fi.Mode()); err != nil {
-		return &CloneError{"chmod", fi.Name(), dst, err}
+		return &Error{"chmod", fi.Name(), dst, err}
 	}
 	return nil
 }
 
-func updateMeta(dst string, fi *Info) error {
+func updateMeta(dst string, fi *fio.Info) error {
 	for _, fp := range mdUpdaters {
 		if err := fp(dst, fi); err != nil {
-			return &CloneError{"md-update", fi.Name(), dst, err}
+			return &Error{"md-update", fi.Name(), dst, err}
 		}
 	}
 	return nil

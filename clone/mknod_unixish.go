@@ -13,15 +13,17 @@
 
 //go:build linux || darwin
 
-package fio
+package clone
 
 import (
 	"syscall"
+
+	"github.com/opencoff/go-fio"
 )
 
-func mknod(dst string, fi *Info) error {
+func mknod(dst string, fi *fio.Info) error {
 	if err := syscall.Mknod(dst, uint32(fi.Mode()), int(fi.Dev)); err != nil {
-		return &CloneError{"mknod", fi.Name(), dst, err}
+		return &Error{"mknod", fi.Name(), dst, err}
 	}
 	return nil
 }
