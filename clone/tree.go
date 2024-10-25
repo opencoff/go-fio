@@ -80,7 +80,7 @@ func WithWalkOptions(wo walk.Options) Option {
 // Tree clones the entire file system tree 'src' into 'dst'.
 // ie entries like src/a/b are cloned into dst/a/b. Returns
 // Error or nil
-func Tree(src, dst string, opts ...Option) error {
+func Tree(dst, src string, opts ...Option) error {
 	opt := defaultOpts()
 	for _, fp := range opts {
 		fp(&opt)
