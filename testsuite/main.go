@@ -3,9 +3,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
+	"runtime"
+	"sync"
 
 	"crypto/rand"
 
@@ -20,12 +23,14 @@ type config struct {
 	// TODO progress bar and other things
 	progress  bool
 	logStdout bool
+	ncpu      int
 }
 
 func main() {
 
 	var progress, help, serial, stdout bool
 	var tmpdir string
+	var ncpu int
 
 	fs := flag.NewFlagSet(Z, flag.ExitOnError)
 
@@ -34,6 +39,7 @@ func main() {
 	fs.StringVarP(&tmpdir, "workdir", "d", "", "Use `D` as the test root directory [OS Tempdir]")
 	fs.BoolVarP(&serial, "serial", "s", false, "Run tests serially [False]")
 	fs.BoolVarP(&stdout, "log-stdout", "", false, "Put log output to STDOUT [False]")
+	fs.IntVarP(&ncpu, "concurrency", "c", runtime.NumCPU(), "Use upto `N` CPUs for all tests")
 
 	fs.SetOutput(os.Stdout)
 
@@ -61,13 +67,13 @@ func main() {
 		tempdir:   tempdir,
 		progress:  progress,
 		logStdout: stdout,
+		ncpu:      ncpu,
 	}
 
-	for _, fn := range args {
-		err = runTest(cfg, fn)
-		if err != nil {
-			break
-		}
+	if serial {
+		err = serialize(cfg, args)
+	} else {
+		err = parallelize(cfg, args)
 	}
 
 	if err != nil {
@@ -80,6 +86,67 @@ func main() {
 	if err != nil {
 		Die("can't remove tempdir %s: %s", tempdir, err)
 	}
+}
+
+func serialize(cfg *config, args []string) error {
+	for _, fn := range args {
+		if err := runTest(cfg, fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parallelize(cfg *config, args []string) error {
+	ch := make(chan string, cfg.ncpu)
+	ech := make(chan error, 1)
+
+	var ewg, wg sync.WaitGroup
+	var errs []error
+
+	// harvest errors
+	ewg.Add(1)
+	go func() {
+		for e := range ech {
+			errs = append(errs, e)
+		}
+		ewg.Done()
+	}()
+
+	// queue up work for the workers; this goroutine _will_
+	// end; no need to use a waitgroup
+	go func() {
+		for _, fn := range args {
+			ch <- fn
+		}
+		// and tell workers that we're done
+		close(ch)
+	}()
+
+	// start workers
+	wg.Add(cfg.ncpu)
+	for i := 0; i < cfg.ncpu; i++ {
+		go func(wg *sync.WaitGroup) {
+			for fn := range ch {
+				if err := runTest(cfg, fn); err != nil {
+					ech <- err
+				}
+			}
+			wg.Done()
+		}(&wg)
+	}
+
+	// wait for them to complete
+	wg.Wait()
+
+	// then complete harvesting all errors
+	close(ech)
+	ewg.Wait()
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
 }
 
 // Run a single test in file 'fn'

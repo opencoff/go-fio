@@ -208,9 +208,8 @@ func (tc *treeCloner) worker(wg *sync.WaitGroup) {
 }
 
 func (tc *treeCloner) sync() error {
-	var wg sync.WaitGroup
 	var errs []error
-	var ewg sync.WaitGroup
+	var ewg, wg sync.WaitGroup
 
 	// harvest errors
 	ewg.Add(1)

@@ -22,15 +22,22 @@ tests = $(wildcard $(testdir)/*.t)
 # serially. Default for now is to make it serial - until we
 # iron out all issues
 # TODO Remove this when we pass all tests
-serial = -s
+serial :=
+
+# default concurrency is 8 threads;
+concurrency := --concurrency 8
+
+# by default we keep logs in a per-test-dir
+log :=
 
 # command line option for make
-ifeq ($(CONCURRENT),1)
-	serial :=
+ifeq ($(SERIAL),1)
+	serial = -s
 endif
 
+# if command line says V=1, put logs in stdout
 ifeq ($(V),1)
-	log := --log-stdout
+	log = --log-stdout
 endif
 
 .PHONY: clean $(trunner)
@@ -42,11 +49,11 @@ $(trunner):
 
 
 ifeq ($(tests),)
-test: $(trunner)
+tests test: $(trunner)
 	@echo "no tests in $(testdir)"
 else
-test: $(trunner)
-	$(trunner) $(log) -p $(serial) $(tests)
+tests test: $(trunner)
+	$(trunner) $(log) -p $(concurrency) $(serial) $(tests)
 endif
 
 clean:

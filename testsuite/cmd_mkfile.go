@@ -25,10 +25,8 @@ func (t *mkfileCmd) Name() string {
 	return "mkfile"
 }
 
-func (t *mkfileCmd) Reset() {
-	t.minsz = 1024
-	t.maxsz = 8 * 1024
-	t.mkdir = false
+func (t *mkfileCmd) New() Cmd {
+	return newMkFileCmd()
 }
 
 // mkfile [-t target] entries...
@@ -111,16 +109,23 @@ func (t *mkfileCmd) mkfile(key string, args []string, env *TestEnv, now time.Tim
 
 var _ Cmd = &mkfileCmd{}
 
-func init() {
-	tc := &mkfileCmd{
+func newMkFileCmd() *mkfileCmd {
+	n := &mkfileCmd{
 		FlagSet: flag.NewFlagSet("mkfile", flag.ExitOnError),
+		target:  "",
+		maxsz:   8 * 1024,
+		minsz:   1024,
 	}
+	fs := n
+	fs.VarP(&n.minsz, "min-file-size", "m", "Minimum file size to be created [1k]")
+	fs.VarP(&n.maxsz, "max-file-size", "M", "Maximum file size to be created [8k]")
+	fs.BoolVarP(&n.mkdir, "dir", "d", false, "Make directories instead of files")
+	fs.StringVarP(&n.target, "target", "t", "lhs", "Make entries in the given location (lhs, rhs, both)")
 
-	fs := tc.FlagSet
-	fs.VarP(&tc.minsz, "min-file-size", "m", "Minimum file size to be created [1k]")
-	fs.VarP(&tc.maxsz, "max-file-size", "M", "Maximum file size to be created [8k]")
-	fs.BoolVarP(&tc.mkdir, "dir", "d", false, "Make directories instead of files")
-	fs.StringVarP(&tc.target, "target", "t", "lhs", "Make entries in the given location (lhs, rhs, both)")
+	return n
+}
 
+func init() {
+	tc := newMkFileCmd()
 	RegisterCommand(tc)
 }

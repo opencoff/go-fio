@@ -75,7 +75,6 @@ func RunTest(tname string, cfg *config, ts []TestSuite) (err error) {
 			args = append(args, d)
 		}
 
-		cmd.Reset()
 		if err = cmd.Run(env, args); err != nil {
 			return fmt.Errorf("%s: %s: %w", tname, cmd.Name(), err)
 		}

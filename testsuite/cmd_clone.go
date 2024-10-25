@@ -11,7 +11,8 @@ import (
 type cloneCmd struct {
 }
 
-func (t *cloneCmd) Reset() {
+func (t *cloneCmd) New() Cmd {
+	return &cloneCmd{}
 }
 
 // clone - takes no options and invokes clone.Tree()

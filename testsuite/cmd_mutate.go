@@ -16,7 +16,8 @@ const (
 	maxMutation int64 = 30
 )
 
-func (t *mutateCmd) Reset() {
+func (t *mutateCmd) New() Cmd {
+	return &mutateCmd{}
 }
 
 func (t *mutateCmd) Run(env *TestEnv, args []string) error {

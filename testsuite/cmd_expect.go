@@ -11,7 +11,12 @@ import (
 type expectCmd struct {
 }
 
-func (t *expectCmd) Reset() {
+func (t *expectCmd) New() Cmd {
+	return &expectCmd{}
+}
+
+func (t *expectCmd) Name() string {
+	return "expect"
 }
 
 func (t *expectCmd) Run(env *TestEnv, args []string) error {
@@ -100,10 +105,6 @@ func match(key string, exp, have []string) error {
 		}
 	}
 	return nil
-}
-
-func (t *expectCmd) Name() string {
-	return "expect"
 }
 
 var _ Cmd = &expectCmd{}

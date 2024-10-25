@@ -16,7 +16,9 @@ import (
 type Cmd interface {
 	Run(e *TestEnv, args []string) error
 	Name() string
-	Reset()
+
+	// returns a newly formed, clean instance
+	New() Cmd
 }
 
 // singleton struct to register test harness commands.
@@ -69,7 +71,7 @@ func ReadTest(fn string) ([]TestSuite, error) {
 		}
 
 		t := TestSuite{
-			Cmd:  c,
+			Cmd:  c.New(),
 			Args: args,
 		}
 		tests = append(tests, t)

@@ -14,7 +14,8 @@ import (
 type syncCmd struct {
 }
 
-func (t *syncCmd) Reset() {
+func (t *syncCmd) New() Cmd {
+	return &syncCmd{}
 }
 
 func (t *syncCmd) Run(env *TestEnv, args []string) error {

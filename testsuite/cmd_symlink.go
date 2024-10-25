@@ -12,7 +12,8 @@ import (
 type symlinkCmd struct {
 }
 
-func (t *symlinkCmd) Reset() {
+func (t *symlinkCmd) New() Cmd {
+	return &symlinkCmd{}
 }
 
 // symlink lhs="newname@oldname newname@oldname" rhs="newname@oldname"
