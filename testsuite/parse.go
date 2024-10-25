@@ -70,6 +70,8 @@ func ReadTest(fn string) ([]TestSuite, error) {
 			return nil, fmt.Errorf("%s:%d: unknown command %s", fn, n, nm)
 		}
 
+		// remember to always give each test suite a new, clean instance
+		// of the respective Cmd
 		t := TestSuite{
 			Cmd:  c.New(),
 			Args: args,
