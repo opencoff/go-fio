@@ -16,13 +16,12 @@
 package fio
 
 import (
-	"fmt"
 	"syscall"
 )
 
-func mknod(dest string, fi *Info) error {
-	if err := syscall.Mknod(dest, uint32(fi.Mode()), int(fi.Dev)); err != nil {
-		return fmt.Errorf("mknod: %w", err)
+func mknod(dst string, fi *Info) error {
+	if err := syscall.Mknod(dst, uint32(fi.Mode()), int(fi.Dev)); err != nil {
+		return &CloneError{"mknod", fi.Name(), dst, err}
 	}
 	return nil
 }

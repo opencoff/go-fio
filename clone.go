@@ -24,24 +24,18 @@ import (
 // is atime, mtime, uid, gid, mode/perm, xattr
 func CloneMetadata(dst, src string) error {
 	fi, err := Lstat(src)
-	if err == nil {
-		err = updateMeta(dst, fi)
+	if err != nil {
+		return &CloneError{"stat-src", src, dst, err}
 	}
 
-	if err != nil {
-		return fmt.Errorf("clonemeta: %w", err)
-	}
-	return nil
+	return updateMeta(dst, fi)
 }
 
 // UpdateMetadata writes new metadata of 'dst' from 'fi'
 // The metadata that will be updated includes atime, mtime, uid/gid,
 // mode/perm, xattr
 func UpdateMetadata(dst string, fi *Info) error {
-	if err := updateMeta(dst, fi); err != nil {
-		return fmt.Errorf("updatemeta: %w", err)
-	}
-	return nil
+	return updateMeta(dst, fi)
 }
 
 // CloneFile copies src to dst - including all copyable file attributes
@@ -51,50 +45,49 @@ func UpdateMetadata(dst string, fi *Info) error {
 func CloneFile(dst, src string) error {
 	fi, err := Lstat(src)
 	if err != nil {
-		return fmt.Errorf("clonefile: %w", err)
+		return &CloneError{"stat-src", src, dst, err}
 	}
 
 	s, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("clonefile: %w", err)
+		return &CloneError{"open-src", src, dst, err}
 	}
 
 	defer s.Close()
 
 	mode := fi.Mode()
 	if mode.IsRegular() {
-		err = copyRegular(dst, s, fi)
+		if err = copyRegular(dst, s, fi); err != nil {
+			return err
+		}
 		goto done
 	}
 
 	switch mode.Type() {
 	case fs.ModeDir:
-		err = os.MkdirAll(dst, mode&fs.ModePerm|0100)
+		if err = os.MkdirAll(dst, mode&fs.ModePerm|0100); err != nil {
+			return &CloneError{"mkdir", src, dst, err}
+		}
 
 	case fs.ModeSymlink:
-		err = clonelink(dst, src, fi)
+		if err = clonelink(dst, src, fi); err != nil {
+			return &CloneError{"clonelink", src, dst, err}
+		}
 
-	case fs.ModeDevice, fs.ModeNamedPipe:
-		err = mknod(dst, fi)
+	case fs.ModeDevice:
+		if err = mknod(dst, fi); err != nil {
+			return &CloneError{"mknod", src, dst, err}
+		}
 
 	//case ModeSocket: XXX Add named socket support
 
 	default:
-		err = fmt.Errorf("clonefile: %s: unsupported type %#x", src, mode)
+		err = fmt.Errorf("unsupported type %#x", mode)
+		return &CloneError{"file-type", src, dst, err}
 	}
 
 done:
-	if err == nil {
-		// update metadata; caller is responsible for deep clone of
-		// a directory.
-		err = updateMeta(dst, fi)
-	}
-
-	// everyone must have their attrs cloned
-	if err != nil {
-		return fmt.Errorf("clonefile: %s from %s: %w", dst, src, err)
-	}
-	return nil
+	return updateMeta(dst, fi)
 }
 
 // copy a regular file to another regular file
@@ -102,33 +95,24 @@ func copyRegular(dst string, s *os.File, fi *Info) error {
 	// make the intermediate dirs of the dest
 	dn := filepath.Dir(dst)
 	if err := os.MkdirAll(dn, 0100|fs.ModePerm&fi.Mode()); err != nil {
-		return err
+		return &CloneError{"mkdir", s.Name(), dst, err}
 	}
 
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
 	d, err := NewSafeFile(dst, OPT_COW|OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
 	if err != nil {
-		return err
+		return &CloneError{"safefile", s.Name(), dst, err}
 	}
 	defer d.Abort()
 
-	di, err := Lstat(d.Name())
-	if err != nil {
-		return err
+	if err = copyFile(d.File, s); err != nil {
+		return &CloneError{"copyfile", s.Name(), dst, err}
 	}
-
-	// if src and dest are on same fs, copy using the best OS primitive
-	if di.IsSameFS(fi) {
-		err = copyFile(d.File, s)
-	} else {
-		err = copyViaMmap(d.File, s)
+	if err = d.Close(); err != nil {
+		return &CloneError{"close", s.Name(), dst, err}
 	}
-
-	if err == nil {
-		err = d.Close()
-	}
-	return err
+	return nil
 }
 
 // a cloner clones a specific attribute
@@ -144,21 +128,30 @@ var mdUpdaters = []cloner{
 }
 
 func clonexattr(dst string, fi *Info) error {
-	return LreplaceXattr(dst, fi.Xattr)
+	if err := LreplaceXattr(dst, fi.Xattr); err != nil {
+		return &CloneError{"replace-xattr", fi.Name(), dst, err}
+	}
+	return nil
 }
 
 func cloneugid(dst string, fi *Info) error {
-	return os.Lchown(dst, int(fi.Uid), int(fi.Gid))
+	if err := os.Lchown(dst, int(fi.Uid), int(fi.Gid)); err != nil {
+		return &CloneError{"lchown", fi.Name(), dst, err}
+	}
+	return nil
 }
 
 func clonemode(dst string, fi *Info) error {
-	return os.Chmod(dst, fi.Mode())
+	if err := os.Chmod(dst, fi.Mode()); err != nil {
+		return &CloneError{"chmod", fi.Name(), dst, err}
+	}
+	return nil
 }
 
 func updateMeta(dst string, fi *Info) error {
 	for _, fp := range mdUpdaters {
 		if err := fp(dst, fi); err != nil {
-			return err
+			return &CloneError{"md-update", fi.Name(), dst, err}
 		}
 	}
 	return nil

@@ -253,7 +253,7 @@ func fullWrite(d *os.File, b []byte) (int, error) {
 	for n > 0 {
 		m, err := d.Write(b)
 		if err != nil {
-			return z, fmt.Errorf("safefile: %w", err)
+			return z, fmt.Errorf("write: %s: %w", d.Name(), err)
 		}
 		n -= m
 		b = b[m:]

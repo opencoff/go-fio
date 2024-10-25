@@ -22,7 +22,7 @@ import (
 )
 
 // macOS 10.12+ have clonefile(2)
-func copyFile(dst, src *os.File) error {
+func sys_copyFile(dst, src *os.File) error {
 	d := dst.Name()
 	s := src.Name()
 

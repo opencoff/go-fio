@@ -15,7 +15,6 @@
 package fio
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 )
@@ -29,29 +28,30 @@ func CopyFile(dst, src string, perm fs.FileMode) error {
 	// never overwrite an existing file.
 	_, err := Stat(dst)
 	if err == nil {
-		return fmt.Errorf("copyfile: destination %s already exists", dst)
+		return &CopyError{"stat-dst", src, dst, err}
 	}
 
 	s, err := os.Open(src)
 	if err != nil {
-		return fmt.Errorf("copyfile: %w", err)
+		return &CopyError{"open-src", src, dst, err}
 	}
 
 	defer s.Close()
 
 	d, err := NewSafeFile(dst, OPT_COW, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
 	if err != nil {
-		return fmt.Errorf("copyfile: %w", err)
+		return &CopyError{"safefile", src, dst, err}
 	}
 
 	defer d.Abort()
-	if err = copyFile(d.File, s); err == nil {
-		err = d.Close()
+
+	if err = copyFile(d.File, s); err != nil {
+		return err
+	}
+	if err = d.Close(); err != nil {
+		return &CopyError{"close", src, dst, err}
 	}
 
-	if err != nil {
-		return fmt.Errorf("copyfile: %w", err)
-	}
 	return nil
 }
 
@@ -61,9 +61,32 @@ func CopyFile(dst, src string, perm fs.FileMode) error {
 // It will fallback to copying via memory mapping 'src' and writing the
 // blocks to 'dst'.
 func CopyFd(dst, src *os.File) error {
-	err := copyFile(dst, src)
-	if err == nil {
-		err = dst.Sync()
+	if err := copyFile(dst, src); err != nil {
+		return err
 	}
-	return err
+
+	if err := dst.Sync(); err != nil {
+		return &CopyError{"sync-dst", src.Name(), dst.Name(), err}
+	}
+	return nil
+}
+
+// copyFile copies using the best os primitive when possible
+// and falls back to mmap based copies
+func copyFile(dst, src *os.File) error {
+	di, err := Lstat(dst.Name())
+	if err != nil {
+		return &CopyError{"lstat-src", src.Name(), dst.Name(), err}
+	}
+
+	si, err := Lstat(src.Name())
+	if err != nil {
+		return &CopyError{"lstat-dst", src.Name(), dst.Name(), err}
+	}
+
+	if di.IsSameFS(si) {
+		return sys_copyFile(dst, src)
+	}
+
+	return copyViaMmap(dst, src)
 }

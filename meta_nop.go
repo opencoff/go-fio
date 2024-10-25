@@ -20,15 +20,15 @@ import (
 	"io/fs"
 )
 
-func clonetimes(dest string, fi *Info) error {
-	return fmt.Errorf("utimes: not supported")
+func clonetimes(dst string, fi *Info) error {
+	return &CloneError{"clonetimes", fi.Name(), dst, err}
 }
 
-func mknod(dest string, src string, fi *Info) error {
-	return fmt.Errorf("mknod: not supported")
+func mknod(dst string, src string, fi *Info) error {
+	return &CloneError{"mknod", src, dst, err}
 }
 
 // clone a symlink - ie we make the target point to the same one as src
-func clonelink(dest string, src string, fi *Info) error {
-	return fmt.Errorf("clonelink: not supported")
+func clonelink(dst string, src string, fi *Info) error {
+	return &CloneError{"clonelink", src, dst, err}
 }

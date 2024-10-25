@@ -14,7 +14,6 @@
 package fio
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/opencoff/go-mmap"
@@ -27,11 +26,11 @@ func copyViaMmap(dst, src *os.File) error {
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("safefile: can't read %s: %w", src.Name(), err)
+		return &CopyError{"mmap-reader", src.Name(), dst.Name(), err}
 	}
 	_, err = dst.Seek(0, os.SEEK_SET)
 	if err != nil {
-		return fmt.Errorf("safefile: can't seek to start of %s: %w", dst.Name(), err)
+		return &CopyError{"seek-mmap", src.Name(), dst.Name(), err}
 	}
 	return nil
 }

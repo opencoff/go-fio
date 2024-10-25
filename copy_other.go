@@ -19,6 +19,6 @@ import (
 	"os"
 )
 
-func copyFile(dst, src *os.File) error {
+func sys_copyFile(dst, src *os.File) error {
 	return copyViaMmap(dst, src)
 }
