@@ -9,4 +9,4 @@ mkfile -t rhs a/f/1
 
 sync
 
-expect same="a a/b a/b/0" diff="" lo="a/d a/d/1" ro="a/f a/f/1"
+expect cd="a a/b" cf="a/b/0" ld="a/d" lf="a/d/1" rd="a/f" rf="a/f/1"

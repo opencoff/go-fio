@@ -1,7 +1,7 @@
-# files only on rhs
+# test empty lhs
 
-mkfile -t rhs a/b/0 a/c/1 a/d/2
+mkfile -t rhs a/0 b/1 c/2
 
 sync
 
-expect ro="a a/b a/c a/d a/b/0 a/c/1 a/d/2"
+expect rd="a b c" rf="a/0 b/1 c/2"

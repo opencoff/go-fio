@@ -1,6 +1,6 @@
-// cmp.go -- concurrent directory differencing
+// cmp.go - compare directories
 //
-// (c) 2024- Sudhi Herle <sudhi@herle.net>
+// (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2
 //
@@ -14,16 +14,16 @@
 package cmp
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/opencoff/go-fio"
 	"github.com/opencoff/go-fio/walk"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 // IgnoreFlag captures the attributes we want to ignore while comparing
@@ -38,266 +38,428 @@ const (
 	IGN_XATTR                           // ignore xattr
 )
 
-// Opt is an option operator for DirCmp.
-type Opt func(o *opt)
+func (f IgnoreFlag) String() string {
+	var z []string
+	if f&IGN_UID > 0 {
+		z = append(z, "uid")
+	}
+	if f&IGN_GID > 0 {
+		z = append(z, "gid")
+	}
+	if f&IGN_HARDLINK > 0 {
+		z = append(z, "links")
+	}
+	if f&IGN_XATTR > 0 {
+		z = append(z, "xattr")
+	}
 
-// opt is options for DirCmp
-type opt struct {
-	ncpu   int
-	deepEq func(lhs, rhs *fio.Info) bool
-	ignore IgnoreFlag
+	return strings.Join(z, ",")
 }
 
-// WithIgnore captures the attributes of fio.Info that must be
+type cmpopt struct {
+	walk.Options
+
+	deepEq func(lhs, rhs *fio.Info) bool
+
+	// file-sys attributes to ignore for equality comparison
+	// Used by cmp.DirCmp
+	ignoreAttr IgnoreFlag
+}
+
+func defaultOptions() cmpopt {
+	return cmpopt{
+		Options: walk.Options{
+			Concurrency:    runtime.NumCPU(),
+			Type:           walk.ALL,
+			OneFS:          false,
+			FollowSymlinks: false,
+			Excludes:       []string{".zfs"},
+		},
+		ignoreAttr: 0,
+	}
+}
+
+// Option captures the various options for cloning
+// a directory tree.
+type Option func(o *cmpopt)
+
+// WithIgnoreAttr captures the attributes of fio.Info that must be
 // ignored for comparing equality of two filesystem entries.
-func WithIgnore(fl IgnoreFlag) Opt {
-	return func(o *opt) {
-		o.ignore |= fl
+func WithIgnoreAttr(fl IgnoreFlag) Option {
+	return func(o *cmpopt) {
+		o.ignoreAttr = fl
+	}
+}
+
+// WithWalkOptions uses 'wo' as the option for walk.Walk(); it
+// describes a caller desired traversal of the file system with
+// the requisite input and output filters
+func WithWalkOptions(wo walk.Options) Option {
+	return func(o *cmpopt) {
+		o.Options = wo
+
+		// make sure we receive all input
+		if o.Type == 0 {
+			o.Type = walk.ALL
+		}
+
+		if o.Concurrency <= 0 {
+			o.Concurrency = runtime.NumCPU()
+		}
 	}
 }
 
 // WithDeepCompare provides a caller supplied comparison function
 // that will be invoked if all other comparable attributes are
 // identical.
-func WithDeepCompare(same func(lhs, rhs *fio.Info) bool) Opt {
-	return func(o *opt) {
+func WithDeepCompare(same func(lhs, rhs *fio.Info) bool) Option {
+	return func(o *cmpopt) {
 		o.deepEq = same
 	}
 }
 
-type entry struct {
-	Name string // relative path name
-	Info *fio.Info
-}
+type cmp struct {
+	cmpopt
 
-// Difference captures the results of comparing two trees
-type Difference struct {
-	// Each of these maps uses a relative path as the key - it
-	// is relative to the argument passed to NewTree().
-	Left  map[string]*fio.Info
-	Right map[string]*fio.Info
+	src, dst string
 
-	// entries that are only on the left
-	LeftOnly []string
-
-	// entries that are only on the right
-	RightOnly []string
-
-	// Entries that are identical
-	Same []string
-
-	// entries that are different (size, perm, uid, gid, xattr)
-	Diff []string
-
-	// entries with same name on both sides but
-	// are different (eg entry is a file on one side
-	// but a directory in the other)
-	Funny []string
-}
-
-type fileqFunc func(a, b *fio.Info) (bool, diffType)
-
-// diff engine state for internal use
-type differ struct {
-	opt
-
-	lhs *Tree
-	rhs *Tree
+	cache *statCache
 
 	fileEq fileqFunc
 
-	same [][]string
-	diff [][]string
+	lhsDir  *FioMap
+	lhsFile *FioMap
+	rhsDir  *FioMap
+	rhsFile *FioMap
+
+	commonDir  *FioPairMap
+	commonFile *FioPairMap
+
+	diff *FioPairMap
+
+	funny *FioPairMap
+
+	done *xsync.MapOf[string, bool]
 }
 
-// DirCmp compares two directory trees represented by "lhs" and "rhs".
-// For regular files, it compares file size and mtime to determine change.
+// Pair represents the Stat/Lstat info of a pair of
+// related file system entries in the source and destination
+type Pair struct {
+	Src, Dst *fio.Info
+}
+
+// FioMap is a concurrency safe map of relative path name and the
+// corresponding Stat/Lstat info.
+type FioMap = xsync.MapOf[string, *fio.Info]
+
+// FioPairMap is a concurrency safe map of relative path name and the
+// corresponding Stat/Lstat info of both the source and destination.
+type FioPairMap = xsync.MapOf[string, Pair]
+
+func newMap() *FioMap {
+	return xsync.NewMapOf[string, *fio.Info]()
+}
+
+func newPairMap() *FioPairMap {
+	return xsync.NewMapOf[string, Pair]()
+}
+
+// DirTree compares two directory trees 'src' and 'dst'.  For regular files,
+// it compares file size and mtime to determine change.
 // For all entries, it compares every comparable attribute of fio.Info - unless
 // explicitly ignored (by using the option WithIgnore()).
-func DirCmp(lhs, rhs *Tree, op ...Opt) (*Difference, error) {
-	d := &differ{
-		opt: opt{
-			ncpu: runtime.NumCPU(),
-		},
-		lhs: lhs,
-		rhs: rhs,
-	}
-	opts := &d.opt
+func DirTree(src, dst string, opt ...Option) (*Difference, error) {
+	option := defaultOptions()
 
-	for _, o := range op {
-		o(opts)
+	for _, fp := range opt {
+		fp(&option)
 	}
 
-	if d.ncpu <= 0 {
-		d.ncpu = runtime.NumCPU()
-	}
-
-	// shard the results per go-routine; we'll combine them
-	// later on
-	d.same = make([][]string, d.ncpu)
-	d.diff = make([][]string, d.ncpu)
-
-	d.fileEq = makeComparators(opts)
-
-	left, lmap, err := d.lhs.gather()
+	c, err := newCmp(src, dst, &option)
 	if err != nil {
 		return nil, err
 	}
 
-	right, rmap, err := rhs.gather()
-	if err != nil {
+	if err = c.gatherSrc(); err != nil {
 		return nil, err
 	}
 
-	var wg sync.WaitGroup
-	var lo, ro, funny []string
-
-	// start workers to do per-file diff
-	och := make(chan work, d.ncpu)
-	wg.Add(d.ncpu)
-	for i := 0; i < d.ncpu; i++ {
-		go d.worker(i, och, &wg)
+	if err = c.gatherDst(); err != nil {
+		return nil, err
 	}
 
-	done := make(map[string]bool, len(left))
+	// now we have differences - pull them together
+	d := &Difference{
+		Src: src,
+		Dst: dst,
 
-	// first iterate over entries on the left
-	for i := range left {
-		e := &left[i]
-		nm := e.Name
-		li := e.Info
+		LeftDirs:   c.lhsDir,
+		LeftFiles:  c.lhsFile,
+		RightDirs:  c.rhsDir,
+		RightFiles: c.rhsFile,
 
-		ri, ok := rmap[nm]
-		if !ok {
-			lo = append(lo, nm)
-			continue
-		}
-
-		done[nm] = true
-		if (li.Mod & ^fs.ModePerm) != (ri.Mod & ^fs.ModePerm) {
-			// funny business
-			funny = append(funny, nm)
-		} else {
-			// submit work for workers to handle
-			och <- work{nm, li, ri}
-		}
+		CommonDirs:  c.commonDir,
+		CommonFiles: c.commonFile,
+		Diff:        c.diff,
+		Funny:       c.funny,
 	}
 
-	// now see what remains on the right
-	for i := range right {
-		e := &right[i]
-		nm := e.Name
+	// we don't need this anymore. we can get rid of it.
+	c.cache.Clear()
+	c.done.Clear()
 
-		_, ok := lmap[nm]
-		if !ok {
-			ro = append(ro, nm)
-			continue
-		}
+	return d, nil
+}
 
-		if _, ok := done[nm]; ok {
-			continue
-		}
+// Difference captures the results of comparing two directory trees
+type Difference struct {
+	Src string
+	Dst string
 
-		// NB: This case should never happen: one of the following
-		//     must be true:
-		//       a) file is NOT in LHS => it's only in the RHS
-		//       b) file is already processed
-		//
-		panic(fmt.Sprintf("dircmp: rhs %s: WTF\n", nm))
-	}
+	LeftDirs   *FioMap
+	LeftFiles  *FioMap
+	RightDirs  *FioMap
+	RightFiles *FioMap
 
-	// wait for workers to complete
-	close(och)
-	wg.Wait()
+	CommonDirs  *FioPairMap
+	CommonFiles *FioPairMap
 
-	// collect each of the sharded results
-	var same, diff []string
-	for i := 0; i < d.ncpu; i++ {
-		same = append(same, d.same[i]...)
-		diff = append(diff, d.diff[i]...)
-	}
-
-	result := &Difference{
-		Left:      lmap,
-		Right:     rmap,
-		LeftOnly:  lo,
-		RightOnly: ro,
-		Same:      same,
-		Diff:      diff,
-		Funny:     funny,
-	}
-
-	return result, nil
+	Diff  *FioPairMap
+	Funny *FioPairMap
 }
 
 func (d *Difference) String() string {
 	var b strings.Builder
-
-	dump := func(desc string, names []string) {
+	d1 := func(desc string, m *FioMap) {
 		fmt.Fprintf(&b, "%s:\n", desc)
-		for _, nm := range names {
-			fmt.Fprintf(&b, "    %s\n", nm)
-		}
+		m.Range(func(nm string, fi *fio.Info) bool {
+			fmt.Fprintf(&b, "\t%s: %s\n", nm, fi)
+			return true
+		})
 	}
 
-	dumpE := func(desc string, entries map[string]*fio.Info) {
-		fmt.Fprintf(&b, "%s\n", desc)
-		for nm, fi := range entries {
-			fmt.Fprintf(&b, "    %s: %s\n", nm, fi)
-		}
+	d2 := func(desc string, m *FioPairMap) {
+		fmt.Fprintf(&b, "%s:\n", desc)
+		m.Range(func(nm string, p Pair) bool {
+			fmt.Fprintf(&b, "\t%s:\n\t\tsrc %s\n\t\tdst %s\n", nm, p.Src, p.Dst)
+			return true
+		})
 	}
 
-	b.WriteString("diff-result:\n")
+	fmt.Fprintf(&b, "---Diff Output---\nSrc: %s\nDst: %s\n", d.Src, d.Dst)
 
-	dumpE("LHS", d.Left)
-	dumpE("RHS", d.Right)
-	dump("same", d.Same)
-	dump("diff", d.Diff)
-	dump("left only", d.LeftOnly)
-	dump("right only", d.RightOnly)
-	dump("funny", d.Funny)
+	d1("Left-only dirs", d.LeftDirs)
+	d1("Left-only files", d.LeftFiles)
+	d1("Right-only dirs", d.RightDirs)
+	d1("Right-only files", d.RightFiles)
 
+	d2("Common dirs", d.CommonDirs)
+	d2("Common files", d.CommonFiles)
+
+	d2("Funny files", d.Funny)
+	d2("Differences", d.Diff)
+
+	b.WriteString("---End Diff Output---\n")
 	return b.String()
 }
 
-// given to workers to figure out actual differences
-type work struct {
-	nm  string // relative path name
-	lhs *fio.Info
-	rhs *fio.Info
+// clone src to dst; we know both are dirs
+func newCmp(src, dst string, opt *cmpopt) (*cmp, error) {
+	lhs, err := fio.Lstat(src)
+	if err != nil {
+		return nil, &Error{"lstat-src", src, dst, err}
+	}
+
+	if !lhs.IsDir() {
+		return nil, &Error{"source not a dir", src, dst, nil}
+	}
+
+	rhs, err := fio.Lstat(dst)
+	if err != nil {
+		return nil, &Error{"lstat-dst", src, dst, err}
+	}
+
+	if !rhs.IsDir() {
+		return nil, &Error{"destination not a dir", src, dst, nil}
+	}
+
+	c := &cmp{
+		cmpopt: *opt,
+		src:    src,
+		dst:    dst,
+		cache:  newStatCache(),
+
+		fileEq: makeEqFunc(opt),
+
+		// the map-value for each of these is the lhs fio.Info
+		lhsDir:  newMap(),
+		lhsFile: newMap(),
+		rhsDir:  newMap(),
+		rhsFile: newMap(),
+
+		commonDir:  newPairMap(),
+		commonFile: newPairMap(),
+		diff:       newPairMap(),
+		funny:      newPairMap(),
+
+		done: xsync.NewMapOf[string, bool](),
+	}
+
+	return c, nil
 }
 
-// worker to compare each file and classify as same or different
-// The workers _ONLY_ process files that are present on both sides
-func (d *differ) worker(me int, och chan work, wg *sync.WaitGroup) {
-	var same, diff []string
+// walk the lhs (ie src) and gather all the contents in the appropriate
+// maps.
+func (c *cmp) gatherSrc() error {
+	// we will add a pre-filter for the tree traversal
+	// so we don't descend dirs that dont exist on the right
+	filter := func(fi *fio.Info) (bool, error) {
+		// walk always uses Lstat for the filter invocation
+		c.cache.StoreLstat(fi)
 
-	for w := range och {
-		// we know these are both of the same "type"
-		lhs := w.lhs
-		rhs := w.rhs
-		nm := w.nm
-
-		if lhs.IsRegular() {
-			// file size is only meaningful for regular files. So get that
-			// out of the way
-			if lhs.Size() != rhs.Size() {
-				diff = append(diff, nm)
-				continue
-			}
+		if !fi.IsDir() {
+			return false, nil
 		}
 
-		// for all entries, compare the remaining attributes
-		if eq, _ := d.fileEq(lhs, rhs); eq {
-			same = append(same, nm)
+		nm, _ := filepath.Rel(c.src, fi.Name())
+		if nm == "." {
+			return false, nil
+		}
+
+		dst := filepath.Join(c.dst, nm)
+		rhs, err := c.cache.Lstat(dst)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// if rhs doesn't exist; then we can safely skip
+				// the rest of entries in lhs and remember to
+				// copy the entire dir
+				c.lhsDir.Store(nm, fi)
+				return false, nil
+			}
+
+			return false, err
+		}
+
+		// if rhs is NOT a dir, then it's a conflict ("funny files")
+		// And we can skip further entries from the lhs
+		if !rhs.IsDir() {
+			c.funny.Store(nm, Pair{fi, rhs})
+			return true, nil
+		}
+
+		// continue processing this entry
+		return false, nil
+	}
+
+	// make a local copy; we will need a clean version for gathering rhs later on.
+	wo := c.cmpopt.Options
+	wo.Filter = filter
+
+	if err := walk.WalkFunc([]string{c.src}, wo, c.processLhs); err != nil {
+		return &Error{"walk-src", c.src, c.dst, err}
+	}
+
+	return nil
+}
+
+// walk rhs (ie dst) and gather entries that are unique to the rhs; the other
+// entries that are shared are already handled in gatherSrc() above.
+func (c *cmp) gatherDst() error {
+	// reset the filter for this walk
+	wo := c.cmpopt.Options
+
+	err := walk.WalkFunc([]string{c.dst}, wo, func(rhs *fio.Info) error {
+		nm, _ := filepath.Rel(c.dst, rhs.Name())
+		if nm == "." {
+			return nil
+		}
+
+		if _, ok := c.done.Load(nm); ok {
+			return nil
+		}
+
+		if _, ok := c.funny.Load(nm); ok {
+			return nil
+		}
+
+		// this is an entry that is ONLY on the rhs
+		// otherwise, we'd have processed it previously when we
+		// walked lhs above.
+		if rhs.IsDir() {
+			c.rhsDir.Store(nm, rhs)
 		} else {
-			diff = append(diff, nm)
+			c.rhsFile.Store(nm, rhs)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return &Error{"walk-dst", c.src, c.dst, err}
+	}
+
+	return nil
+}
+
+// process one entry from lhs. We will only get those entries that are present
+// on both sides - by virtue of the Filter func above.
+func (c *cmp) processLhs(lhs *fio.Info) error {
+	c.cache.StoreLstat(lhs)
+	nm, _ := filepath.Rel(c.src, lhs.Name())
+	if nm == "." {
+		return nil
+	}
+
+	dst := filepath.Join(c.dst, nm)
+	rhs, err := c.cache.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// this is a missing non-dir entry in the rhs
+			if lhs.IsDir() {
+				c.lhsDir.Store(nm, lhs)
+			} else {
+				c.lhsFile.Store(nm, lhs)
+			}
+			return nil
+		}
+
+		// report other errors
+		return &Error{"lstat-dst", c.src, c.dst, err}
+	}
+
+	// mark this common entry as processed
+	c.done.Store(nm, true)
+
+	// in all cases below - we will store these two together
+	// in the appropriate map
+	pair := Pair{lhs, rhs}
+
+	// if the file types don't match - skip
+	if (lhs.Mod & ^fs.ModePerm) != (rhs.Mod & ^fs.ModePerm) {
+		c.funny.Store(nm, pair)
+		return nil
+	}
+
+	// both are same "type" of files
+	if lhs.IsRegular() {
+		// compare file sizes and mark differences
+		if lhs.Size() != rhs.Size() {
+			c.diff.Store(nm, pair)
+			return nil
 		}
 	}
 
-	d.same[me] = same
-	d.diff[me] = diff
-	wg.Done()
+	// all other "types" - we will compare attributes
+	if eq, _ := c.fileEq(lhs, rhs); !eq {
+		c.diff.Store(nm, pair)
+		return nil
+	}
+
+	if lhs.IsDir() {
+		c.commonDir.Store(nm, pair)
+	} else {
+		c.commonFile.Store(nm, pair)
+	}
+	return nil
 }
 
 type diffType uint
@@ -324,11 +486,13 @@ func (d diffType) String() string {
 	return diffTypeName[d]
 }
 
+type fileqFunc func(a, b *fio.Info) (bool, diffType)
+
 // return a comparator function that is optimized for the attributes we are
 // comparing
-func makeComparators(opts *opt) fileqFunc {
+func makeEqFunc(opts *cmpopt) fileqFunc {
 	ignore := func(fl IgnoreFlag) bool {
-		if fl&opts.ignore > 0 {
+		if fl&opts.ignoreAttr > 0 {
 			return true
 		}
 		return false
@@ -384,94 +548,4 @@ func makeComparators(opts *opt) fileqFunc {
 		}
 		return true, 0
 	}
-}
-
-// TreeOption is an option operator for constructing a filesystem tree
-// object (Tree)
-type TreeOption func(o *treeopt)
-
-// treeopt is options for the filesys tree
-type treeopt struct {
-	walk.Options
-}
-
-// WithWalkOptions uses 'wo' as the option for walk.Walk(); it
-// describes a caller desired traversal of the file system with
-// the requisite input and output filters
-func WithWalkOptions(wo walk.Options) TreeOption {
-	return func(o *treeopt) {
-		o.Options = wo
-
-		// make sure we receive all input
-		if o.Type == 0 {
-			o.Type = walk.ALL
-		}
-	}
-}
-
-// Tree represents a file system "tree" traversal object
-type Tree struct {
-	treeopt
-
-	dir  string
-	root *fio.Info
-}
-
-// NewTree creates a new file system traversal. It has no
-// methods or interfaces for public use. It's use is to be
-// an input to DirCmp()
-func NewTree(nm string, opts ...TreeOption) (*Tree, error) {
-	fi, err := fio.Lstat(nm)
-	if err != nil {
-		return nil, fmt.Errorf("cmp: %s: %w", nm, err)
-	}
-	if !fi.IsDir() {
-		return nil, fmt.Errorf("cmp: %s is not a dir", nm)
-	}
-
-	o := &treeopt{}
-	for _, fp := range opts {
-		fp(o)
-	}
-
-	t := &Tree{
-		treeopt: *o,
-		dir:     nm,
-		root:    fi,
-	}
-
-	return t, nil
-}
-
-func (t *Tree) gather() ([]entry, map[string]*fio.Info, error) {
-	tree := make(map[string]*fio.Info)
-	list := make([]entry, 0, 16)
-
-	// setup a walk instance and gather entries
-	och, ech := walk.Walk([]string{t.dir}, t.treeopt.Options)
-
-	var errs []error
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func(wg *sync.WaitGroup, ch chan error) {
-		for e := range ch {
-			errs = append(errs, e)
-		}
-		wg.Done()
-	}(&wg, ech)
-
-	for ii := range och {
-		nm, _ := filepath.Rel(t.dir, ii.Name())
-		if nm != "." {
-			tree[nm] = ii
-			list = append(list, entry{nm, ii})
-		}
-	}
-
-	wg.Wait()
-	if len(errs) > 0 {
-		return nil, nil, errors.Join(errs...)
-	}
-	return list, tree, nil
 }

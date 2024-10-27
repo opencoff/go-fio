@@ -7,4 +7,4 @@ mkfile -d -t both a b c
 sync
 
 # do the sync; there should be no diffs
-expect lo="" ro="" diff="" same="a b c" funny=""
+expect cd="a b c"

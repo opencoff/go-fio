@@ -8,8 +8,6 @@ import (
 	"path"
 	"time"
 
-	"github.com/opencoff/go-fio/cmp"
-	"github.com/opencoff/go-fio/walk"
 	"github.com/opencoff/go-logger"
 )
 
@@ -21,10 +19,10 @@ type TestEnv struct {
 	TestRoot string
 	TestName string
 
-	ltree *cmp.Tree
-	rtree *cmp.Tree
-
 	log logger.Logger
+
+	// number of concurrenct cpus to use
+	ncpu int
 
 	Start time.Time
 }
@@ -107,22 +105,6 @@ func makeEnv(tname string, cfg *config) (*TestEnv, error) {
 		return nil, fmt.Errorf("%s: RHS: %w", tname, err)
 	}
 
-	wo := walk.Options{
-		Concurrency: 8,
-		//Type:        walk.ALL & ^walk.DIR,
-		Type: walk.ALL,
-	}
-
-	lt, err := cmp.NewTree(lhs, cmp.WithWalkOptions(wo))
-	if err != nil {
-		return nil, fmt.Errorf("%s: tree: %w", lhs, err)
-	}
-
-	rt, err := cmp.NewTree(rhs, cmp.WithWalkOptions(wo))
-	if err != nil {
-		return nil, fmt.Errorf("%s: tree: %w", rhs, err)
-	}
-
 	log, err := logger.NewLogger(logfile, logger.LOG_DEBUG, tname, logger.Ldate|logger.Ltime|logger.Lmicroseconds|logger.Lfileloc)
 	if err != nil {
 		return nil, fmt.Errorf("%s: logfile: %w", tname, err)
@@ -134,10 +116,7 @@ func makeEnv(tname string, cfg *config) (*TestEnv, error) {
 		TestRoot: tmpdir,
 		TestName: tname,
 		log:      log,
-
-		ltree: lt,
-		rtree: rt,
-
+		ncpu:	  cfg.ncpu,
 		Start: time.Now(),
 	}
 

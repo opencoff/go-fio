@@ -106,7 +106,7 @@ func Lstatm(nm string, fi *Info) error {
 
 // String is a string representation of Info
 func (ii *Info) String() string {
-	return fmt.Sprintf("%s: %d; %s; %s", ii.Name(), ii.Siz, ii.ModTime(), ii.Mode().String())
+	return fmt.Sprintf("%s: %d %d; %s; %s", ii.Name(), ii.Siz, ii.Nlink, ii.ModTime(), ii.Mode().String())
 }
 
 // fs.FileInfo methods of Info

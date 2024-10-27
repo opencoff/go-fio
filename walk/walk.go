@@ -31,7 +31,6 @@ import (
 	"strings"
 	"sync"
 
-
 	"github.com/opencoff/go-fio"
 )
 
@@ -84,7 +83,7 @@ type Options struct {
 	// exclude entries from further traversal.
 	// This function must return True if this entry should
 	// no longer be processed. ie filtered out.
-	Filter func(fi *fio.Info) bool
+	Filter func(fi *fio.Info) (bool, error)
 }
 
 // internal state
@@ -223,7 +222,6 @@ func WalkFunc(names []string, opt Options, apply func(fi *fio.Info) error) error
 }
 
 func newWalkState(opt Options) *walkState {
-
 	d := &walkState{
 		Options: opt,
 		ch:      make(chan string, opt.Concurrency),
@@ -248,8 +246,8 @@ func newWalkState(opt Options) *walkState {
 	// default accept filter
 	if d.Filter == nil {
 		// by default - "don't filter anything"
-		d.Filter = func(_ *fio.Info) bool {
-			return false
+		d.Filter = func(_ *fio.Info) (bool, error) {
+			return false, nil
 		}
 	}
 
@@ -273,7 +271,6 @@ func newWalkState(opt Options) *walkState {
 // walk the entries in 'names'; this creates workers to
 // traverse the FS in a concurrent fashion.
 func (d *walkState) doWalk(names []string) {
-
 	// send work to workers
 	dirs := make([]string, 0, len(names))
 	for i := range names {
@@ -288,7 +285,7 @@ func (d *walkState) doWalk(names []string) {
 
 		fi := d.newInfo()
 		if err := fio.Lstatm(nm, fi); err != nil {
-			d.error("lstat %s: %w", nm, err)
+			d.error(&Error{"lstat", nm, err})
 			continue
 		}
 
@@ -297,7 +294,12 @@ func (d *walkState) doWalk(names []string) {
 			continue
 		}
 
-		if d.Filter(fi) {
+		skip, err := d.Filter(fi)
+		if err != nil {
+			d.error(&Error{"filter", nm, err})
+			continue
+		}
+		if skip {
 			continue
 		}
 
@@ -329,7 +331,7 @@ func (d *walkState) worker() {
 	for nm := range d.ch {
 		fi := d.newInfo()
 		if err := fio.Lstatm(nm, fi); err != nil {
-			d.error("lstat %s: %w", nm, err)
+			d.error(&Error{"lstat-wrk", nm, err})
 			d.dirWg.Done()
 			continue
 		}
@@ -369,7 +371,7 @@ func (d *walkState) exclude(nm string) bool {
 	for _, pat := range d.Excludes {
 		ok, err := path.Match(pat, bn)
 		if err != nil {
-			d.errch <- fmt.Errorf("glob '%s': %s", pat, err)
+			d.error(&Error{"exclude-glob", nm, fmt.Errorf("'%s': %w", pat, err)})
 		} else if ok {
 			return true
 		}
@@ -395,13 +397,13 @@ func (d *walkState) enq(dirs []string) {
 func readDir(nm string) ([]string, error) {
 	fd, err := os.Open(nm)
 	if err != nil {
-		return nil, fmt.Errorf("readdir: %s: %w", nm, err)
+		return nil, &Error{"readdir", nm, err}
 	}
 	defer fd.Close()
 
 	names, err := fd.Readdirnames(-1)
 	if err != nil {
-		return nil, fmt.Errorf("readdir: %s: %w", nm, err)
+		return nil, &Error{"readdirnames", nm, err}
 	}
 	return names, nil
 }
@@ -417,7 +419,7 @@ func readDir(nm string) ([]string, error) {
 func (d *walkState) walkPath(nm string) {
 	names, err := readDir(nm)
 	if err != nil {
-		d.error("%w", err)
+		d.error(err)
 		return
 	}
 
@@ -441,7 +443,7 @@ func (d *walkState) walkPath(nm string) {
 		fi := d.newInfo()
 		err := fio.Lstatm(fp, fi)
 		if err != nil {
-			d.error("walk: stat %s: %w", fp, err)
+			d.error(&Error{"lstat", fp, err})
 			continue
 		}
 
@@ -450,7 +452,12 @@ func (d *walkState) walkPath(nm string) {
 			continue
 		}
 
-		if d.Filter(fi) {
+		skip, err := d.Filter(fi)
+		if err != nil {
+			d.error(&Error{"filter", fp, err})
+			continue
+		}
+		if skip {
 			continue
 		}
 
@@ -488,14 +495,14 @@ func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
 	nm := fi.Name()
 	newnm, err := filepath.EvalSymlinks(nm)
 	if err != nil {
-		d.error("symlink %s: %s", nm, err)
+		d.error(&Error{"symlink", nm, err})
 		return dirs
 	}
 	nm = newnm
 
 	// we know this is no longer a symlink
 	if err = fio.Statm(nm, fi); err != nil {
-		d.error("symlink: stat %s: %s", nm, err)
+		d.error(&Error{"symlink-stat", nm, err})
 		return dirs
 	}
 
@@ -555,8 +562,8 @@ func (d *walkState) isSingleFS(fi *fio.Info) bool {
 }
 
 // enq an error
-func (d *walkState) error(s string, args ...any) {
-	d.errch <- fmt.Errorf(s, args...)
+func (d *walkState) error(e error) {
+	d.errch <- e
 }
 
 // TODO mem pool for info

@@ -1,7 +1,7 @@
 # test empty rhs
 
-mkfile -t lhs a/b/0 a/c/1 a/d/2
+mkfile -t lhs a/0 b/1 c/2
 
 sync
 
-expect lo="a a/b a/c a/d a/b/0 a/c/1 a/d/2"
+expect ld="a b c" lf="a/0 b/1 c/2"

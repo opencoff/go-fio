@@ -5,7 +5,9 @@ package main
 import (
 	"fmt"
 
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/opencoff/go-fio/cmp"
+	"github.com/opencoff/go-fio/walk"
 )
 
 type expectCmd struct {
@@ -21,11 +23,14 @@ func (t *expectCmd) Name() string {
 
 func (t *expectCmd) Run(env *TestEnv, args []string) error {
 	exp := map[string][]string{
-		"lo":    {},
-		"ro":    {},
-		"diff":  {},
-		"same":  {},
-		"funny": {},
+		"ld":    {},	// left only dirs
+		"lf":    {},	// left only files
+		"rd":    {},	// right only dirs
+		"rf":    {},	// right only files
+		"cd":    {},	// common dirs
+		"cf":    {},	// common files
+		"diff":  {},	// different files
+		"funny": {},	// funny entries
 	}
 
 	for i := range args {
@@ -46,33 +51,58 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 		}
 	}
 
+
+	wo := walk.Options{
+		Concurrency: env.ncpu,
+		Type: walk.ALL,
+	}
+
 	// now run the difference engine and collect output
-	diff, err := cmp.DirCmp(env.ltree, env.rtree)
+	diff, err := cmp.DirTree(env.Lhs, env.Rhs,
+		//cmp.WithIgnoreAttr(cmp.IGN_HARDLINK),
+		cmp.WithWalkOptions(wo))
 	if err != nil {
 		return err
 	}
 
-	env.log.Debug("Differences:\n%s\n", diff)
+	env.log.Debug(diff.String())
 
 	for k, v := range exp {
 		switch k {
-		case "lo":
-			err = match(k, v, diff.LeftOnly)
-		case "ro":
-			err = match(k, v, diff.RightOnly)
+		case "ld":
+			err = match(k, v,  keys(diff.LeftDirs))
+		case "lf":
+			err = match(k, v,  keys(diff.LeftFiles))
+		case "rd":
+			err = match(k, v,  keys(diff.RightDirs))
+		case "rf":
+			err = match(k, v,  keys(diff.RightFiles))
+
+		case "cd":
+			err = match(k, v,  keys(diff.CommonDirs))
+		case "cf":
+			err = match(k, v,  keys(diff.CommonFiles))
 		case "diff":
-			err = match(k, v, diff.Diff)
-		case "same":
-			err = match(k, v, diff.Same)
+			err = match(k, v,  keys(diff.Diff))
 		case "funny":
-			err = match(k, v, diff.Funny)
+			err = match(k, v,  keys(diff.Funny))
 		}
+
 		if err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func keys[K comparable, V any](m *xsync.MapOf[K, V]) []K {
+	var v []K
+	m.Range(func (k K, _ V) bool {
+		v = append(v, k)
+		return true
+	})
+	return v
 }
 
 func match(key string, exp, have []string) error {

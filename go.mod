@@ -9,6 +9,7 @@ require (
 	github.com/opencoff/pflag v1.0.6-sh1
 	github.com/opencoff/shlex v0.1.0
 	github.com/pkg/xattr v0.4.10
+	github.com/puzpuzpuz/xsync/v3 v3.4.0
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c
 	golang.org/x/sys v0.26.0
 )

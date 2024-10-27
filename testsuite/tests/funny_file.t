@@ -11,4 +11,4 @@ mkfile -d -t rhs a/d/0
 # sync all time stamps
 sync
 
-expect same="a a/b a/b/0 a/c a/c/0" diff="a/d" funny="a/d/0"
+expect cd="a a/b a/c" cf="a/b/0 a/c/0" diff="a/d" funny="a/d/0"
