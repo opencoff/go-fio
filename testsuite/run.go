@@ -116,8 +116,8 @@ func makeEnv(tname string, cfg *config) (*TestEnv, error) {
 		TestRoot: tmpdir,
 		TestName: tname,
 		log:      log,
-		ncpu:	  cfg.ncpu,
-		Start: time.Now(),
+		ncpu:     cfg.ncpu,
+		Start:    time.Now(),
 	}
 
 	return e, nil

@@ -104,6 +104,11 @@ func mutate(fn string, minpct, maxpct int64) error {
 			return err
 		}
 	}
+
+	now := time.Now()
+	if err = os.Chtimes(fn, now, now); err != nil {
+		return err
+	}
 	return nil
 }
 

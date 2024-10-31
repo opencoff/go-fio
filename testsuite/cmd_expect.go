@@ -5,9 +5,9 @@ package main
 import (
 	"fmt"
 
-	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 type expectCmd struct {
@@ -23,14 +23,14 @@ func (t *expectCmd) Name() string {
 
 func (t *expectCmd) Run(env *TestEnv, args []string) error {
 	exp := map[string][]string{
-		"ld":    {},	// left only dirs
-		"lf":    {},	// left only files
-		"rd":    {},	// right only dirs
-		"rf":    {},	// right only files
-		"cd":    {},	// common dirs
-		"cf":    {},	// common files
-		"diff":  {},	// different files
-		"funny": {},	// funny entries
+		"ld":    {}, // left only dirs
+		"lf":    {}, // left only files
+		"rd":    {}, // right only dirs
+		"rf":    {}, // right only files
+		"cd":    {}, // common dirs
+		"cf":    {}, // common files
+		"diff":  {}, // different files
+		"funny": {}, // funny entries
 	}
 
 	for i := range args {
@@ -51,10 +51,9 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 		}
 	}
 
-
 	wo := walk.Options{
 		Concurrency: env.ncpu,
-		Type: walk.ALL,
+		Type:        walk.ALL,
 	}
 
 	// now run the difference engine and collect output
@@ -70,22 +69,22 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 	for k, v := range exp {
 		switch k {
 		case "ld":
-			err = match(k, v,  keys(diff.LeftDirs))
+			err = match(k, v, keys(diff.LeftDirs))
 		case "lf":
-			err = match(k, v,  keys(diff.LeftFiles))
+			err = match(k, v, keys(diff.LeftFiles))
 		case "rd":
-			err = match(k, v,  keys(diff.RightDirs))
+			err = match(k, v, keys(diff.RightDirs))
 		case "rf":
-			err = match(k, v,  keys(diff.RightFiles))
+			err = match(k, v, keys(diff.RightFiles))
 
 		case "cd":
-			err = match(k, v,  keys(diff.CommonDirs))
+			err = match(k, v, keys(diff.CommonDirs))
 		case "cf":
-			err = match(k, v,  keys(diff.CommonFiles))
+			err = match(k, v, keys(diff.CommonFiles))
 		case "diff":
-			err = match(k, v,  keys(diff.Diff))
+			err = match(k, v, keys(diff.Diff))
 		case "funny":
-			err = match(k, v,  keys(diff.Funny))
+			err = match(k, v, keys(diff.Funny))
 		}
 
 		if err != nil {
@@ -98,7 +97,7 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 
 func keys[K comparable, V any](m *xsync.MapOf[K, V]) []K {
 	var v []K
-	m.Range(func (k K, _ V) bool {
+	m.Range(func(k K, _ V) bool {
 		v = append(v, k)
 		return true
 	})

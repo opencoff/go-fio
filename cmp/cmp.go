@@ -231,19 +231,23 @@ type Difference struct {
 func (d *Difference) String() string {
 	var b strings.Builder
 	d1 := func(desc string, m *FioMap) {
-		fmt.Fprintf(&b, "%s:\n", desc)
-		m.Range(func(nm string, fi *fio.Info) bool {
-			fmt.Fprintf(&b, "\t%s: %s\n", nm, fi)
-			return true
-		})
+		if m.Size() > 0 {
+			fmt.Fprintf(&b, "%s:\n", desc)
+			m.Range(func(nm string, fi *fio.Info) bool {
+				fmt.Fprintf(&b, "\t%s: %s\n", nm, fi)
+				return true
+			})
+		}
 	}
 
 	d2 := func(desc string, m *FioPairMap) {
-		fmt.Fprintf(&b, "%s:\n", desc)
-		m.Range(func(nm string, p Pair) bool {
-			fmt.Fprintf(&b, "\t%s:\n\t\tsrc %s\n\t\tdst %s\n", nm, p.Src, p.Dst)
-			return true
-		})
+		if m.Size() > 0 {
+			fmt.Fprintf(&b, "%s:\n", desc)
+			m.Range(func(nm string, p Pair) bool {
+				fmt.Fprintf(&b, "\t%s:\n\t\tsrc %s\n\t\tdst %s\n", nm, p.Src, p.Dst)
+				return true
+			})
+		}
 	}
 
 	fmt.Fprintf(&b, "---Diff Output---\nSrc: %s\nDst: %s\n", d.Src, d.Dst)

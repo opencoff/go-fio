@@ -9,5 +9,5 @@ sync
 
 # adding a new dir on the rhs changes the dir-link-count; so
 # we expect to see "a" in the different bucket.
-expect cf="a/b/0 a/c/0" cd="a/c a/b" rd="a/x" rf="a/x/L0" \
-    lf="a/b/L0" diff="a"
+expect cf="a/b/0 a/c/0" cd="a/c" rd="a/x" rf="a/x/L0" \
+    lf="a/b/L0" diff="a a/b"
