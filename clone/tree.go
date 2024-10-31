@@ -1,4 +1,4 @@
-// tree.go - clone a dir tree recursively
+// tree.go - clone a dir-tree
 //
 // (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
@@ -14,12 +14,11 @@
 package clone
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/opencoff/go-fio"
@@ -27,35 +26,13 @@ import (
 	"github.com/opencoff/go-fio/walk"
 )
 
-type cloneopt struct {
-	walk.Options
-
-	// file-sys attributes to ignore for equality comparison
-	// Used by cmp.DirCmp
-	ignoreAttr cmp.IgnoreFlag
-}
-
-func defaultOpts() cloneopt {
-	return cloneopt{
-		Options: walk.Options{
-			Concurrency:    runtime.NumCPU(),
-			Type:           walk.ALL,
-			OneFS:          false,
-			FollowSymlinks: false,
-			Excludes:       []string{".zfs"},
-		},
-	}
-}
-
-// Option captures the various options for cloning
-// a directory tree.
-type Option func(o *cloneopt)
+type Option func(o *treeopt)
 
 // WithIgnoreAttr captures the attributes of fio.Info that must be
 // ignored for comparing equality of two filesystem entries.
 func WithIgnoreAttr(fl cmp.IgnoreFlag) Option {
-	return func(o *cloneopt) {
-		o.ignoreAttr = fl
+	return func(o *treeopt) {
+		o.fl = fl
 	}
 }
 
@@ -63,256 +40,402 @@ func WithIgnoreAttr(fl cmp.IgnoreFlag) Option {
 // describes a caller desired traversal of the file system with
 // the requisite input and output filters
 func WithWalkOptions(wo walk.Options) Option {
-	return func(o *cloneopt) {
-		o.Options = wo
-
-		// make sure we receive all input
-		if o.Type == 0 {
-			o.Type = walk.ALL
-		}
-
-		if o.Concurrency <= 0 {
-			o.Concurrency = runtime.NumCPU()
-		}
+	return func(o *treeopt) {
+		o.walkopt = wo
 	}
 }
 
-// Tree clones the entire file system tree 'src' into 'dst'.
-// ie entries like src/a/b are cloned into dst/a/b. Returns
-// Error or nil
-func Tree(dst, src string, opts ...Option) error {
-	opt := defaultOpts()
-	for _, fp := range opts {
-		fp(&opt)
+type treeopt struct {
+	fl cmp.IgnoreFlag
+
+	walkopt walk.Options
+}
+
+func defaultOptions() treeopt {
+	opt := treeopt{
+		walkopt: walk.Options{
+			Concurrency: runtime.NumCPU(),
+			Type:        walk.ALL,
+		},
+	}
+	return opt
+}
+
+// Tree clones the directory tree 'src' to 'dst' with options 'opt'.
+// For example, an entry src/a will be cloned to dst/b. If dst
+// exists, it must be a directory.
+func Tree(dst, src string, opt ...Option) error {
+	si, err := fio.Lstat(src)
+	if err != nil {
+		return &Error{"lstat-src", src, dst, err}
+	}
+	if !si.IsDir() {
+		return &Error{"clone", src, dst, fmt.Errorf("src is not a dir")}
 	}
 
-	tc, err := newTreeCloner(src, dst, &opt)
+	di, err := fio.Lstat(dst)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return &Error{"lstat-dst", src, dst, err}
+		}
+
+		// first make the dest dir
+		if err = File(dst, src); err != nil {
+			return err
+		}
+	} else {
+		if !di.IsDir() {
+			return &Error{"clone", src, dst, fmt.Errorf("dst is not a dir")}
+		}
+	}
+
+	option := defaultOptions()
+	for _, fp := range opt {
+		fp(&option)
+	}
+
+	diff, err := cmp.DirTree(src, dst, cmp.WithIgnoreAttr(option.fl),
+		cmp.WithWalkOptions(option.walkopt))
+	if err != nil {
+		return &Error{"tree-diff", src, dst, err}
+	}
+
+	if diff.Funny.Size() > 0 {
+		var b strings.Builder
+		diff.Funny.Range(func(_ string, p cmp.Pair) bool {
+			fmt.Fprintf(&b, "\t'%s' -- '%s'\n", p.Src.Name(), p.Dst.Name())
+			return true
+		})
+		err := fmt.Errorf("found %d funny entries:\n%s", diff.Funny.Size(), b.String())
+		return &Error{"clone", src, dst, err}
+	}
+
+	n := newCloner(diff, &option)
+
+	if err = n.clone(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+type dircloner struct {
+	*cmp.Difference
+
+	ncpu int
+
+	ech chan error
+	och chan work
+	wg  sync.WaitGroup
+
+	// sharded dirs that are modified
+	dirs []map[string]bool
+}
+
+func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
+	ncpu := opt.walkopt.Concurrency
+
+	cc := &dircloner{
+		Difference: d,
+		ncpu:       ncpu,
+		ech:        make(chan error, 1),
+		och:        make(chan work, ncpu),
+		dirs:       make([]map[string]bool, ncpu),
+	}
+
+	for i := 0; i < ncpu; i++ {
+		cc.dirs[i] = make(map[string]bool, 8)
+	}
+
+	return cc
+}
+
+func (cc *dircloner) clone() error {
+
+	// each worker will track the dirs they modify in a sharded map
+	// the shards will be combined later
+	wp := fio.NewWorkPool[work](cc.ncpu, func(i int, w work) error {
+		var err error
+		cc.dirs[i], err = cc.dowork(cc.dirs[i], w)
+		return err
+	})
+
+	// now submit work to the workpool
+
+	// LeftDirs => new dirs in dst
+	// LeftFiles => copy to new dirs
+	// Diff => overwrite + COW src to dst
+	// RightFiles -- delete first
+	// RightDirs -- delete last
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
+			wp.Submit(&delOp{fi.Name()})
+			return true
+		})
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
+			wp.Submit(&delOp{fi.Name()})
+			return true
+		})
+		wg.Done()
+	}()
+
+	// now submit copies
+	wg.Add(1)
+	go func() {
+		cc.Diff.Range(func(_ string, p cmp.Pair) bool {
+			wp.Submit(&copyOp{p.Src.Name(), p.Dst.Name()})
+			return true
+		})
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		cc.LeftFiles.Range(func(nm string, _ *fio.Info) bool {
+			src := filepath.Join(cc.Src, nm)
+			dst := filepath.Join(cc.Dst, nm)
+			wp.Submit(&copyOp{src, dst})
+			return true
+		})
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		// this clones dirs
+		cc.LeftDirs.Range(func(nm string, _ *fio.Info) bool {
+			src := filepath.Join(cc.Src, nm)
+			dst := filepath.Join(cc.Dst, nm)
+			wp.Submit(&copyOp{src, dst})
+			return true
+		})
+		wg.Done()
+	}()
+
+	// submit all the work and then tell workers we're done
+	go func() {
+		wg.Wait()
+		wp.Close()
+	}()
+
+	err := wp.Wait()
 	if err != nil {
 		return err
 	}
 
-	tc.workfp = tc.apply
-	return tc.sync()
-}
-
-type treeCloner struct {
-	cloneopt
-
-	src, dst string
-
-	diff *cmp.Difference
-
-	workch chan op
-	ech    chan error
-
-	workfp func(o op) error
-	out    io.Writer
-}
-
-// operation to apply and its data
-// for opCp: a, b are both valid
-// for opRm: only a is valid
-type op struct {
-	typ  opType
-	a, b string
-
-	lhs, rhs *fio.Info
-}
-
-type opType int
-
-const (
-	opCp opType = 1 + iota // copy a to b
-	opRm                   // rm a
-)
-
-// clone src to dst; we know both are dirs
-func newTreeCloner(src, dst string, opt *cloneopt) (*treeCloner, error) {
-	if err := validate(src, dst); err != nil {
-		return nil, err
-	}
-
-	ltree, err := cmp.NewTree(src, cmp.WithWalkOptions(opt.Options))
-	if err != nil {
-		return nil, err
-	}
-
-	rtree, err := cmp.NewTree(dst, cmp.WithWalkOptions(opt.Options))
-	if err != nil {
-		return nil, err
-	}
-
-	diff, err := cmp.DirCmp(ltree, rtree, cmp.WithIgnore(cmp.IGN_HARDLINK))
-	if err != nil {
-		return nil, err
-	}
-
-	tc := &treeCloner{
-		cloneopt: *opt,
-		src:      src,
-		dst:      dst,
-		diff:     diff,
-		workch:   make(chan op, opt.Concurrency),
-		ech:      make(chan error, 1),
-	}
-
-	return tc, nil
-}
-
-func validate(src, dst string) error {
-	// first make the dir
-	di, err := fio.Lstat(dst)
-	if err == nil {
-		if !di.IsDir() {
-			return &Error{"lstat", src, dst, fmt.Errorf("destination is not a directory")}
+	// merge the various dir shards into a single one
+	dirmap := cc.dirs[0]
+	for _, dirs := range cc.dirs[1:] {
+		for nm := range dirs {
+			dirmap[nm] = true
 		}
 	}
 
-	if err != nil {
-		if os.IsNotExist(err) {
-			// make the directory if needed
-			err = File(dst, src)
-		}
-
-		if err != nil {
-			return &Error{"lstat", src, dst, err}
-		}
-	}
-	return nil
+	// fixup mtimes of modified dirs
+	return cc.fixup(dirmap)
 }
 
-func (tc *treeCloner) apply(o op) error {
-	switch o.typ {
-	case opCp:
-		if err := File(o.b, o.a); err != nil {
-			return &Error{"clone-entry", o.a, o.b, err}
+// fixup dst dirs - esp their mtimes; the files would've been written in
+// random order
+func (cc *dircloner) fixup(dmap map[string]bool) error {
+	// clone dir metadata of modified dirs
+	wp := fio.NewWorkPool[copyOp](cc.ncpu, func(_ int, w copyOp) error {
+		return File(w.dst, w.src)
+	})
+
+	for p := range dmap {
+		nm, _ := filepath.Rel(cc.Dst, p)
+		if nm != "." {
+			src := filepath.Join(cc.Src, nm)
+			wp.Submit(copyOp{src, p})
 		}
-	case opRm:
-		if err := os.RemoveAll(o.a); err != nil {
-			return &Error{"open-src", o.a, o.b, err}
+	}
+
+	wp.Close()
+
+	return wp.Wait()
+}
+
+func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, error) {
+	track := func(p string) {
+		dn := filepath.Dir(p)
+		dirs[dn] = true
+	}
+
+	switch z := w.(type) {
+	case *copyOp:
+		if err := File(z.dst, z.src); err != nil {
+			return dirs, err
 		}
+		track(z.dst)
+
+	case *delOp:
+		err := os.RemoveAll(z.name)
+		if err != nil && !os.IsNotExist(err) {
+			return dirs, &Error{"rm", cc.Src, cc.Dst, err}
+		}
+		track(z.name)
 	default:
-		return &Error{"unknown-op", o.a, o.b, fmt.Errorf("unknown op %d", o.typ)}
+		err := fmt.Errorf("unknown op %T", w)
+		return dirs, &Error{"clone", cc.Src, cc.Dst, err}
 	}
-	return nil
+	return dirs, nil
 }
 
-func (tc *treeCloner) worker(wg *sync.WaitGroup) {
-	for o := range tc.workch {
-		err := tc.workfp(o)
-		if err != nil {
-			tc.ech <- err
-		}
-	}
-	wg.Done()
+type work any
+
+type copyOp struct {
+	src, dst string
 }
 
-func (tc *treeCloner) sync() error {
-	var errs []error
-	var ewg, wg sync.WaitGroup
+type delOp struct {
+	name string
+}
 
+/*
+
+func (cc *dircloner) clone() error {
 	// harvest errors
+	var ewg sync.WaitGroup
+	var errs []error
+
 	ewg.Add(1)
-	go func() {
-		for e := range tc.ech {
+	go func(wg *sync.WaitGroup) {
+		for e := range cc.ech {
 			errs = append(errs, e)
 		}
-		ewg.Done()
-	}()
+		wg.Done()
+	}(&ewg)
 
-	// start workers
-	wg.Add(tc.Concurrency)
-	for i := 0; i < tc.Concurrency; i++ {
-		go tc.worker(&wg)
+	cc.wg.Add(cc.ncpu)
+	for i := 0; i < cc.ncpu; i++ {
+		go cc.worker(i)
 	}
 
-	// And, queue up work for the workers
-	var submitDone sync.WaitGroup
+	// now submit work to the workers
 
-	diff := tc.diff
-	submitDone.Add(3)
-	go func(wg *sync.WaitGroup) {
-		for _, nm := range diff.Diff {
-			s, ok := diff.Left[nm]
-			if !ok {
-				err := fmt.Errorf("%s: can't find in left map", nm)
-				tc.ech <- &Error{"clonetree", tc.src, tc.dst, err}
-				continue
-			}
+	// LeftDirs => new dirs in dst
+	// LeftFiles => copy to new dirs
+	// Diff => overwrite + COW src to dst
+	// RightFiles -- delete first
+	// RightDirs -- delete last
 
-			d, ok := diff.Right[nm]
-			if !ok {
-				err := fmt.Errorf("%s: can't find in right map", nm)
-				tc.ech <- &Error{"clonetree", tc.src, tc.dst, err}
-				continue
-			}
+	var wg sync.WaitGroup
 
-			o := op{
-				typ: opCp,
-				a:   s.Name(),
-				b:   d.Name(),
-				lhs: s,
-				rhs: d,
-			}
-			tc.workch <- o
-		}
-		wg.Done()
-	}(&submitDone)
-
-	go func(wg *sync.WaitGroup) {
-		for _, nm := range diff.LeftOnly {
-			s, ok := diff.Left[nm]
-			if !ok {
-				err := fmt.Errorf("%s: can't find in left map", nm)
-				tc.ech <- &Error{"clonetree", tc.src, tc.dst, err}
-				continue
-			}
-
-			o := op{
-				typ: opCp,
-				a:   s.Name(),
-				b:   path.Join(tc.dst, nm),
-				lhs: s,
-			}
-			tc.workch <- o
-		}
-		wg.Done()
-	}(&submitDone)
-
-	go func(wg *sync.WaitGroup) {
-		for _, nm := range diff.RightOnly {
-			d, ok := diff.Right[nm]
-			if !ok {
-				err := fmt.Errorf("diff: can't find %s in destination", nm)
-				tc.ech <- &Error{"clonetree", tc.src, tc.dst, err}
-				continue
-			}
-
-			o := op{
-				typ: opRm,
-				a:   d.Name(),
-				lhs: d,
-			}
-			tc.workch <- o
-		}
-		wg.Done()
-	}(&submitDone)
-
-	// when we're done submitting all the work, close the worker input chan
+	wg.Add(1)
 	go func() {
-		submitDone.Wait()
-		close(tc.workch)
+		diff.RightFiles.Range(func(_ string, fi *fio.Info) bool {
+			cc.och <- &delOp{fi.Name()}
+			return true
+		})
+		wg.Done()
 	}()
 
-	// now wait for workers to complete
-	wg.Wait()
+	wg.Add(1)
+	go func() {
+		diff.RightDirs.Range(func(_ string, fi *fio.Info) bool {
+			cc.och <- &delOp{fi.Name()}
+			return true
+		})
+		wg.Done()
+	}()
 
-	// wait for error harvestor to be complete
-	close(tc.ech)
+	// now submit copies
+	wg.Add(1)
+	go func() {
+		diff.Diff.Range(func(_ string, p cmp.Pair) bool {
+			cc.och <- &copyOp{p.Src.Name(), p.Dst.Name()}
+			return true
+		})
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		diff.LeftFiles.Range(func(nm string, _ *fio.Info) bool {
+			src := filepath.Join(cc.Src, nm)
+			dst := filepath.Join(cc.Dst, nm)
+			cc.och <- &copyOp{src, dst}
+			return true
+		})
+		wg.Done()
+	}()
+
+	wg.Add(1)
+	go func() {
+		// this clones dirs
+		diff.LeftDirs.Range(func(nm string, _ *fio.Info) bool {
+			src := filepath.Join(cc.Src, nm)
+			dst := filepath.Join(cc.Dst, nm)
+			cc.och <- &copyOp{src, dst}
+			return true
+		})
+		wg.Done()
+	}()
+
+	// submit all the work and then tell workers we're done
+	go func() {
+		wg.Wait()
+		close(cc.och)
+	}()
+
+	// wait for workers to finish and collect any errors
+	cc.wg.Wait()
+	close(cc.ech)
 	ewg.Wait()
 
 	if len(errs) > 0 {
-		return &Error{"clonetree", tc.src, tc.dst, errors.Join(errs...)}
+		return errors.Join(errs...)
 	}
-	return nil
+
+	// merge the various dir shards into a single one
+	dirmap := cc.dirs[0]
+	for _, dirs := range cc.dirs[1:] {
+		for nm := range dirs {
+			dirmap[nm] = true
+		}
+	}
+
+	return cc.fixup(dirmap)
 }
+
+func (cc *dircloner) worker(i int) {
+	dirs := make(map[string]bool, 8)
+
+	track := func(p string) {
+			dn := filepath.Dir(p)
+			dirs[dn] = true
+		}
+
+	for o := range cc.och {
+		switch z := o.(type) {
+		case copyOp:
+			if err := File(z.dst, z.src); err != nil {
+				cc.ech <- err
+			} else {
+				track(z.dst)
+			}
+
+		case delOp:
+			err := os.RemoveAll(z.name)
+			if err != nil && !os.IsNotExist(err) {
+				cc.ech <- &Error{"rm", diff.Src, diff.Dst, err}
+			} else {
+				track(z.name)
+			}
+		}
+	}
+
+	cc.dirs[i] = dirs
+	cc.wg.Done()
+}
+*/

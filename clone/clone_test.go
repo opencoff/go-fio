@@ -1,4 +1,4 @@
-// clone_test.go -- info tests
+// clone_test.go -- clone file tests
 //
 // (c) 2024- Sudhi Herle <sudhi@herle.net>
 //

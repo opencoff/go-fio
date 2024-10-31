@@ -312,7 +312,7 @@ func newCmp(src, dst string, opt *cmpopt) (*cmp, error) {
 // maps.
 func (c *cmp) gatherSrc() error {
 	// we will add a pre-filter for the tree traversal
-	// so we don't descend dirs that dont exist on the right
+	// so we don't descend certain dirs
 	filter := func(fi *fio.Info) (bool, error) {
 		// walk always uses Lstat for the filter invocation
 		c.cache.StoreLstat(fi)
@@ -327,24 +327,13 @@ func (c *cmp) gatherSrc() error {
 		}
 
 		dst := filepath.Join(c.dst, nm)
-		rhs, err := c.cache.Lstat(dst)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// if rhs doesn't exist; then we can safely skip
-				// the rest of entries in lhs and remember to
-				// copy the entire dir
-				c.lhsDir.Store(nm, fi)
-				return false, nil
+		if rhs, err := c.cache.Lstat(dst); err == nil {
+			// if rhs is NOT a dir, then it's a conflict ("funny files")
+			// And we can skip further entries from the lhs
+			if !rhs.IsDir() {
+				c.funny.Store(nm, Pair{fi, rhs})
+				return true, nil
 			}
-
-			return false, err
-		}
-
-		// if rhs is NOT a dir, then it's a conflict ("funny files")
-		// And we can skip further entries from the lhs
-		if !rhs.IsDir() {
-			c.funny.Store(nm, Pair{fi, rhs})
-			return true, nil
 		}
 
 		// continue processing this entry
@@ -359,6 +348,67 @@ func (c *cmp) gatherSrc() error {
 		return &Error{"walk-src", c.src, c.dst, err}
 	}
 
+	return nil
+}
+
+// process one entry from lhs.
+func (c *cmp) processLhs(lhs *fio.Info) error {
+	c.cache.StoreLstat(lhs)
+	nm, _ := filepath.Rel(c.src, lhs.Name())
+	if nm == "." {
+		return nil
+	}
+
+	src := lhs.Name()
+	dst := filepath.Join(c.dst, nm)
+	rhs, err := c.cache.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if lhs.IsDir() {
+				c.lhsDir.Store(nm, lhs)
+			} else {
+				c.lhsFile.Store(nm, lhs)
+			}
+			return nil
+		}
+
+		// report other errors
+		return &Error{"lstat-dst", src, dst, err}
+	}
+
+	// in all cases below - we will store these two together
+	// in the appropriate map
+	pair := Pair{lhs, rhs}
+
+	// if the file types don't match - skip
+	if (lhs.Mod & ^fs.ModePerm) != (rhs.Mod & ^fs.ModePerm) {
+		c.funny.Store(nm, pair)
+		return nil
+	}
+
+	// mark this common entry as processed
+	c.done.Store(nm, true)
+
+	// both are same "type" of files
+	if lhs.IsRegular() {
+		// compare file sizes and mark differences
+		if lhs.Size() != rhs.Size() {
+			c.diff.Store(nm, pair)
+			return nil
+		}
+	}
+
+	// all other "types" - we will compare attributes
+	if eq, _ := c.fileEq(lhs, rhs); !eq {
+		c.diff.Store(nm, pair)
+		return nil
+	}
+
+	if lhs.IsDir() {
+		c.commonDir.Store(nm, pair)
+	} else {
+		c.commonFile.Store(nm, pair)
+	}
 	return nil
 }
 
@@ -400,67 +450,6 @@ func (c *cmp) gatherDst() error {
 	return nil
 }
 
-// process one entry from lhs. We will only get those entries that are present
-// on both sides - by virtue of the Filter func above.
-func (c *cmp) processLhs(lhs *fio.Info) error {
-	c.cache.StoreLstat(lhs)
-	nm, _ := filepath.Rel(c.src, lhs.Name())
-	if nm == "." {
-		return nil
-	}
-
-	dst := filepath.Join(c.dst, nm)
-	rhs, err := c.cache.Lstat(dst)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// this is a missing non-dir entry in the rhs
-			if lhs.IsDir() {
-				c.lhsDir.Store(nm, lhs)
-			} else {
-				c.lhsFile.Store(nm, lhs)
-			}
-			return nil
-		}
-
-		// report other errors
-		return &Error{"lstat-dst", c.src, c.dst, err}
-	}
-
-	// mark this common entry as processed
-	c.done.Store(nm, true)
-
-	// in all cases below - we will store these two together
-	// in the appropriate map
-	pair := Pair{lhs, rhs}
-
-	// if the file types don't match - skip
-	if (lhs.Mod & ^fs.ModePerm) != (rhs.Mod & ^fs.ModePerm) {
-		c.funny.Store(nm, pair)
-		return nil
-	}
-
-	// both are same "type" of files
-	if lhs.IsRegular() {
-		// compare file sizes and mark differences
-		if lhs.Size() != rhs.Size() {
-			c.diff.Store(nm, pair)
-			return nil
-		}
-	}
-
-	// all other "types" - we will compare attributes
-	if eq, _ := c.fileEq(lhs, rhs); !eq {
-		c.diff.Store(nm, pair)
-		return nil
-	}
-
-	if lhs.IsDir() {
-		c.commonDir.Store(nm, pair)
-	} else {
-		c.commonFile.Store(nm, pair)
-	}
-	return nil
-}
 
 type diffType uint
 
