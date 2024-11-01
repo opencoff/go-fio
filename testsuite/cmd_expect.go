@@ -57,9 +57,7 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 	}
 
 	// now run the difference engine and collect output
-	diff, err := cmp.DirTree(env.Lhs, env.Rhs,
-		//cmp.WithIgnoreAttr(cmp.IGN_HARDLINK),
-		cmp.WithWalkOptions(wo))
+	diff, err := cmp.DirTree(env.Lhs, env.Rhs, cmp.WithWalkOptions(wo))
 	if err != nil {
 		return err
 	}

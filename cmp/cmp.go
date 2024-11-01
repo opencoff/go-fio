@@ -32,10 +32,9 @@ import (
 type IgnoreFlag uint
 
 const (
-	IGN_UID      IgnoreFlag = 1 << iota // ignore uid
-	IGN_GID                             // ignore gid
-	IGN_HARDLINK                        // ignore hardlink count
-	IGN_XATTR                           // ignore xattr
+	IGN_UID   IgnoreFlag = 1 << iota // ignore uid
+	IGN_GID                          // ignore gid
+	IGN_XATTR                        // ignore xattr
 )
 
 func (f IgnoreFlag) String() string {
@@ -45,9 +44,6 @@ func (f IgnoreFlag) String() string {
 	}
 	if f&IGN_GID > 0 {
 		z = append(z, "gid")
-	}
-	if f&IGN_HARDLINK > 0 {
-		z = append(z, "links")
 	}
 	if f&IGN_XATTR > 0 {
 		z = append(z, "xattr")
@@ -454,14 +450,12 @@ func (c *cmp) gatherDst() error {
 	return nil
 }
 
-
 type diffType uint
 
 const (
 	_D_MTIME diffType = 1 << iota
 	_D_UID
 	_D_GID
-	_D_LINK
 	_D_XATTR
 	_D_CUSTOM
 )
@@ -470,7 +464,6 @@ var diffTypeName map[diffType]string = map[diffType]string{
 	_D_MTIME:  "mtime",
 	_D_UID:    "uid",
 	_D_GID:    "gid",
-	_D_LINK:   "link",
 	_D_XATTR:  "xattr",
 	_D_CUSTOM: "custom",
 }
@@ -510,11 +503,6 @@ func makeEqFunc(opts *cmpopt) fileqFunc {
 	if !ignore(IGN_GID) {
 		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
 			return lhs.Gid == rhs.Gid, _D_GID
-		})
-	}
-	if !ignore(IGN_HARDLINK) {
-		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
-			return lhs.Nlink == rhs.Nlink, _D_LINK
 		})
 	}
 	if !ignore(IGN_XATTR) {
