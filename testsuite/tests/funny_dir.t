@@ -10,4 +10,4 @@ mkfile -t rhs a/d
 
 sync
 
-expect cd="a a/b a/c" cf="a/b/0 a/b/1 a/c/0 a/c/1"  funny="a/d"
+expect cd="a/b a/c" cf="a/b/0 a/b/1 a/c/0 a/c/1"  funny="a/d" diff="a"

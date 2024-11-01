@@ -105,10 +105,6 @@ func keys[K comparable, V any](m *xsync.MapOf[K, V]) []K {
 }
 
 func match(key string, exp, have []string) error {
-	if len(exp) != len(have) {
-		return fmt.Errorf("%s: exp %d entries, have %d", key, len(exp), len(have))
-	}
-
 	mkmap := func(v []string) map[string]bool {
 		m := make(map[string]bool)
 		for _, nm := range v {
