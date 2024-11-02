@@ -1,7 +1,10 @@
 package clone
 
 import (
+	crand "crypto/rand"
+	"flag"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -53,7 +56,33 @@ func mkfilex(fn string) error {
 		return fmt.Errorf("creat: %s: %w", fn, err)
 	}
 
-	fd.Write([]byte("hello"))
+	sz := 1024 + rand.Int64N(32768)
+	b := make([]byte, sz)
+	_, err = crand.Read(b)
+	if err != nil {
+		return fmt.Errorf("rand read: %w", err)
+	}
+
+	fd.Write(b)
 	fd.Sync()
 	return fd.Close()
+}
+
+var testDir = flag.String("testdir", "", "Use 'T' as the testdir for file I/O tests")
+
+func getTmpdir(t *testing.T) string {
+	assert := newAsserter(t)
+	tmpdir := t.TempDir()
+
+	if len(*testDir) > 0 {
+		tmpdir = filepath.Join(*testDir, t.Name())
+		err := os.MkdirAll(tmpdir, 0700)
+		assert(err == nil, "mkdir %s: %s", tmpdir, err)
+		t.Logf("Using %s as test dir .. \n", tmpdir)
+		t.Cleanup(func() {
+			t.Logf("cleaning up %s ..\n", tmpdir)
+			os.RemoveAll(tmpdir)
+		})
+	}
+	return tmpdir
 }

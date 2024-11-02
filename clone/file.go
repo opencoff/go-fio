@@ -102,7 +102,7 @@ func copyRegular(dst string, s *os.File, fi *fio.Info) error {
 
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
-	d, err := fio.NewSafeFile(dst, fio.OPT_COW|fio.OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
+	d, err := fio.NewSafeFile(dst, fio.OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
 	if err != nil {
 		return &Error{"safefile", s.Name(), dst, err}
 	}
@@ -114,6 +114,7 @@ func copyRegular(dst string, s *os.File, fi *fio.Info) error {
 	if err = d.Close(); err != nil {
 		return &Error{"close", s.Name(), dst, err}
 	}
+
 	return nil
 }
 

@@ -14,6 +14,7 @@
 package clone
 
 import (
+	"bytes"
 	"fmt"
 	"io/fs"
 	"os"
@@ -21,12 +22,13 @@ import (
 	"testing"
 
 	"github.com/opencoff/go-fio"
+	"github.com/opencoff/go-mmap"
 )
 
 func TestCloneDir(t *testing.T) {
 	assert := newAsserter(t)
 
-	tmp := t.TempDir()
+	tmp := getTmpdir(t)
 	nm := path.Join(tmp, "testdir")
 	err := os.MkdirAll(nm, 0700)
 	assert(err == nil, "mkdir: %s", err)
@@ -51,7 +53,7 @@ func TestCloneDir(t *testing.T) {
 func TestCloneRegFile(t *testing.T) {
 	assert := newAsserter(t)
 
-	tmp := t.TempDir()
+	tmp := getTmpdir(t)
 	nm := path.Join(tmp, "testfile")
 	err := mkfilex(nm)
 	assert(err == nil, "test file %s: %s", nm, err)
@@ -76,7 +78,7 @@ func TestCloneRegFile(t *testing.T) {
 func TestCloneSymlink(t *testing.T) {
 	assert := newAsserter(t)
 
-	tmp := t.TempDir()
+	tmp := getTmpdir(t)
 	nm := path.Join(tmp, "testfile")
 	err := mkfilex(nm)
 	assert(err == nil, "test file %s: %s", nm, err)
@@ -156,5 +158,42 @@ func mdEqual(newf, oldf string) error {
 			return fmt.Errorf("xattr: unknown key %s", k)
 		}
 	}
+
+	if !a.IsRegular() {
+		return nil
+	}
+
+	// content equality for regular files
+	rfd, err := os.Open(oldf)
+	if err != nil {
+		return err
+	}
+	defer rfd.Close()
+
+	wfd, err := os.Open(newf)
+	if err != nil {
+		return err
+	}
+	defer wfd.Close()
+
+	rm := mmap.New(rfd)
+	wm := mmap.New(wfd)
+
+	rmm, err := rm.Map(-1, 0, mmap.PROT_READ, mmap.F_READAHEAD)
+	if err != nil {
+		return err
+	}
+	defer rmm.Unmap()
+
+	wmm, err := wm.Map(-1, 0, mmap.PROT_READ, mmap.F_READAHEAD)
+	if err != nil {
+		return err
+	}
+	defer wmm.Unmap()
+
+	if !bytes.Equal(rmm.Bytes(), wmm.Bytes()) {
+		return fmt.Errorf("content: mismatch")
+	}
+
 	return nil
 }

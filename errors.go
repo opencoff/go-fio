@@ -38,5 +38,3 @@ func (e *CopyError) Unwrap() error {
 }
 
 var _ error = &CopyError{}
-
-

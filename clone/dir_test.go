@@ -28,7 +28,7 @@ import (
 func TestTreeCloneEmpty(t *testing.T) {
 	assert := newAsserter(t)
 
-	tmp := t.TempDir()
+	tmp := getTmpdir(t)
 
 	src := path.Join(tmp, "empty", "lhs")
 	dst := path.Join(tmp, "empty", "rhs")
@@ -43,7 +43,7 @@ func TestTreeCloneEmpty(t *testing.T) {
 	assert(err == nil, "clone: %s", err)
 
 	// now run a cmp to ensure there are no differences
-	err = treeEq(src, dst)
+	err = treeEq(src, dst, t)
 	assert(err == nil, "cmp: %s", err)
 }
 
@@ -51,7 +51,44 @@ func TestTreeCloneEmpty(t *testing.T) {
 func TestTreeCloneBasic(t *testing.T) {
 	assert := newAsserter(t)
 
-	tmp := t.TempDir()
+	tmp := getTmpdir(t)
+
+	src := path.Join(tmp, "lhs")
+	dst := path.Join(tmp, "rhs")
+
+	err := os.MkdirAll(src, 0700)
+	assert(err == nil, "mkdir src: %s: %s", src, err)
+
+	err = os.MkdirAll(dst, 0700)
+	assert(err == nil, "mkdir dst: %s: %s", dst, err)
+
+	//err = mkfiles(src, []string{"a/b", "a/c"}, 3)
+	err = mkfiles(src, []string{"a/b"}, 2)
+	assert(err == nil, "mkfiles src: %s", err)
+
+	//err = mkfiles(dst, []string{"a/b", "a/c"}, 3)
+	err = mkfiles(dst, []string{"a/b"}, 2)
+	assert(err == nil, "mkfiles src: %s", err)
+
+	/*
+		d, err := cmp.DirTree(src, dst)
+		assert(err == nil, "cmp: %s", err)
+
+		t.Logf("%s\n", d)
+	*/
+
+	err = Tree(dst, src)
+	assert(err == nil, "clone: %s", err)
+
+	err = treeEq(src, dst, t)
+	assert(err == nil, "cmp: %s", err)
+}
+
+// clone dirs with changes on both sides
+func TestTreeCloneDiffs(t *testing.T) {
+	assert := newAsserter(t)
+
+	tmp := getTmpdir(t)
 	tmp = "/tmp/clonebasic"
 
 	src := path.Join(tmp, "lhs")
@@ -63,13 +100,16 @@ func TestTreeCloneBasic(t *testing.T) {
 	err = os.MkdirAll(dst, 0700)
 	assert(err == nil, "mkdir dst: %s: %s", dst, err)
 
-	err = mkfiles(src, 3)
+	err = mkfiles(src, []string{"a/b", "a/c", "a/d"}, 3)
+	assert(err == nil, "mkfiles src: %s", err)
+
+	err = mkfiles(dst, []string{"a/b", "a/c", "a/d"}, 2)
 	assert(err == nil, "mkfiles src: %s", err)
 
 	err = Tree(dst, src)
 	assert(err == nil, "clone: %s", err)
 
-	err = treeEq(src, dst)
+	err = treeEq(src, dst, t)
 	assert(err == nil, "cmp: %s", err)
 }
 
@@ -78,22 +118,27 @@ func TestTreeCloneFunny(t *testing.T) {
 
 }
 
-func mkfiles(base string, n int) error {
-	for i := 0; i < n; i++ {
-		nm := fmt.Sprintf("f%03d", i)
-		fn := path.Join(base, "a", "b", nm)
-		if err := mkfilex(fn); err != nil {
-			return err
+func mkfiles(base string, paths []string, n int) error {
+	for _, p := range paths {
+		dn := path.Join(base, p)
+		for i := 0; i < n; i++ {
+			nm := fmt.Sprintf("f%03d", i)
+			fn := path.Join(dn, nm)
+			if err := mkfilex(fn); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func treeEq(src, dst string) error {
+func treeEq(src, dst string, t *testing.T) error {
 	d, err := cmp.DirTree(src, dst)
 	if err != nil {
 		return err
 	}
+
+	//t.Logf("%s\n", d)
 
 	if d.Funny.Size() > 0 {
 		return xerror("funny", d.Funny)

@@ -59,7 +59,6 @@ var _ io.WriteCloser = &SafeFile{}
 
 const (
 	OPT_OVERWRITE uint32 = 1 << iota
-	OPT_COW
 )
 
 // NewSafeFile creates a new temporary file that would either be
@@ -81,17 +80,12 @@ func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile,
 	flag |= os.O_CREATE | os.O_TRUNC
 
 	// make sure we don't have conflicting flags
-	if (opts & OPT_COW) != 0 {
-		flag &= ^os.O_WRONLY
-		flag |= os.O_RDWR
-	}
-
 	if (flag & os.O_RDONLY) != 0 {
 		return nil, fmt.Errorf("safefile: %s conflicting open mode (O_RDONLY)", nm)
 	}
 
-	if (flag & (os.O_RDWR | os.O_WRONLY)) == 0 {
-		flag |= os.O_RDWR
+	if flag&(os.O_RDWR|os.O_WRONLY) == 0 {
+		flag |= os.O_WRONLY
 	}
 
 	// keep the old file around - we don't want to destroy it if we Abort() this operation.
@@ -99,24 +93,6 @@ func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile,
 	fd, err := os.OpenFile(tmp, flag, perm)
 	if err != nil {
 		return nil, err
-	}
-
-	// clone old file to the new one
-	if (opts & OPT_COW) != 0 {
-		old, err := os.Open(nm)
-		switch {
-		case err != nil:
-			if !os.IsNotExist(err) {
-				return nil, fmt.Errorf("safefile: open-cow: %w", err)
-			}
-		case err == nil:
-			err = CopyFd(fd, old)
-			old.Close()
-
-			if err != nil {
-				return nil, fmt.Errorf("safefile: %s: %w", nm, err)
-			}
-		}
 	}
 
 	sf := &SafeFile{
