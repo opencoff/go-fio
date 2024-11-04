@@ -6,7 +6,6 @@
 package main
 
 import (
-	//flag "github.com/opencoff/pflag"
 	"github.com/opencoff/go-utils"
 )
 

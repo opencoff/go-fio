@@ -27,9 +27,7 @@ import (
 // clone empty dirs
 func TestTreeCloneEmpty(t *testing.T) {
 	assert := newAsserter(t)
-
 	tmp := getTmpdir(t)
-
 	src := path.Join(tmp, "empty", "lhs")
 	dst := path.Join(tmp, "empty", "rhs")
 
@@ -50,7 +48,6 @@ func TestTreeCloneEmpty(t *testing.T) {
 // clone dirs with a few entries on the lhs
 func TestTreeCloneBasic(t *testing.T) {
 	assert := newAsserter(t)
-
 	tmp := getTmpdir(t)
 
 	src := path.Join(tmp, "lhs")
@@ -70,13 +67,6 @@ func TestTreeCloneBasic(t *testing.T) {
 	err = mkfiles(dst, []string{"a/b"}, 2)
 	assert(err == nil, "mkfiles src: %s", err)
 
-	/*
-		d, err := cmp.DirTree(src, dst)
-		assert(err == nil, "cmp: %s", err)
-
-		t.Logf("%s\n", d)
-	*/
-
 	err = Tree(dst, src)
 	assert(err == nil, "clone: %s", err)
 
@@ -87,9 +77,7 @@ func TestTreeCloneBasic(t *testing.T) {
 // clone dirs with changes on both sides
 func TestTreeCloneDiffs(t *testing.T) {
 	assert := newAsserter(t)
-
 	tmp := getTmpdir(t)
-	tmp = "/tmp/clonebasic"
 
 	src := path.Join(tmp, "lhs")
 	dst := path.Join(tmp, "rhs")
@@ -111,11 +99,6 @@ func TestTreeCloneDiffs(t *testing.T) {
 
 	err = treeEq(src, dst, t)
 	assert(err == nil, "cmp: %s", err)
-}
-
-// clone dirs with funny entries
-func TestTreeCloneFunny(t *testing.T) {
-
 }
 
 func mkfiles(base string, paths []string, n int) error {

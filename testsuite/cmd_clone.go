@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -24,14 +25,35 @@ func (t *cloneCmd) Name() string {
 }
 
 func (t *cloneCmd) Run(env *TestEnv, args []string) error {
+
+	var funny []string
+
+	// gather any args
+	for _, arg := range args {
+		key, vals, err := Split(arg)
+		if err != nil {
+			return err
+		}
+		if key != "funny" {
+			return fmt.Errorf("clone: unknown keyword %s", key)
+		}
+		if len(vals) > 0 {
+			funny = append(funny, vals...)
+		}
+	}
+
 	wo := walk.Options{
 		Concurrency: env.ncpu,
 		Type:        walk.ALL,
 	}
 
 	err := clone.Tree(env.Rhs, env.Lhs, clone.WithWalkOptions(wo))
-
 	if err != nil {
+		var ferr clone.FunnyError
+		if errors.As(err, &ferr) && len(funny) > 0 {
+			return matchFunny(&ferr, funny)
+		}
+
 		return err
 	}
 
@@ -46,6 +68,35 @@ func (t *cloneCmd) Run(env *TestEnv, args []string) error {
 	err = treeEq(diff)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+// match funny entries in the error vs. what is expected
+func matchFunny(fe *clone.FunnyError, funny []string) error {
+	if len(fe.Funny) != len(funny) {
+		return fmt.Errorf("funny: exp %d, saw %d entries", len(funny), len(fe.Funny))
+	}
+
+	// build a lookup table
+	done := make(map[string]bool)
+	for i := range fe.Funny {
+		ent := &fe.Funny[i]
+		done[ent.Name] = false
+	}
+
+	for _, nm := range funny {
+		_, ok := done[nm]
+		if !ok {
+			return fmt.Errorf("funny: missing %s", nm)
+		}
+		done[nm] = true
+	}
+
+	for nm, ok := range done {
+		if !ok {
+			return fmt.Errorf("funny: saw extra %s", nm)
+		}
 	}
 	return nil
 }

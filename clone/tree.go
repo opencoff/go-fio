@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 
 	"github.com/opencoff/go-fio"
@@ -101,12 +100,7 @@ func Tree(dst, src string, opt ...Option) error {
 	}
 
 	if diff.Funny.Size() > 0 {
-		var b strings.Builder
-		diff.Funny.Range(func(_ string, p cmp.Pair) bool {
-			fmt.Fprintf(&b, "\t'%s' -- '%s'\n", p.Src.Name(), p.Dst.Name())
-			return true
-		})
-		err := fmt.Errorf("found %d funny entries:\n%s", diff.Funny.Size(), b.String())
+		err := newFunnyError(diff.Funny)
 		return &Error{"clone", src, dst, err}
 	}
 
@@ -301,141 +295,13 @@ type delOp struct {
 	name string
 }
 
-/*
+func newFunnyError(m *cmp.FioPairMap) *FunnyError {
+	var f []FunnyEntry
 
-func (cc *dircloner) clone() error {
-	// harvest errors
-	var ewg sync.WaitGroup
-	var errs []error
+	m.Range(func(nm string, p cmp.Pair) bool {
+		f = append(f, FunnyEntry{nm, p.Src, p.Dst})
+		return true
+	})
 
-	ewg.Add(1)
-	go func(wg *sync.WaitGroup) {
-		for e := range cc.ech {
-			errs = append(errs, e)
-		}
-		wg.Done()
-	}(&ewg)
-
-	cc.wg.Add(cc.ncpu)
-	for i := 0; i < cc.ncpu; i++ {
-		go cc.worker(i)
-	}
-
-	// now submit work to the workers
-
-	// LeftDirs => new dirs in dst
-	// LeftFiles => copy to new dirs
-	// Diff => overwrite + COW src to dst
-	// RightFiles -- delete first
-	// RightDirs -- delete last
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		diff.RightFiles.Range(func(_ string, fi *fio.Info) bool {
-			cc.och <- &delOp{fi.Name()}
-			return true
-		})
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		diff.RightDirs.Range(func(_ string, fi *fio.Info) bool {
-			cc.och <- &delOp{fi.Name()}
-			return true
-		})
-		wg.Done()
-	}()
-
-	// now submit copies
-	wg.Add(1)
-	go func() {
-		diff.Diff.Range(func(_ string, p cmp.Pair) bool {
-			cc.och <- &copyOp{p.Src.Name(), p.Dst.Name()}
-			return true
-		})
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		diff.LeftFiles.Range(func(nm string, _ *fio.Info) bool {
-			src := filepath.Join(cc.Src, nm)
-			dst := filepath.Join(cc.Dst, nm)
-			cc.och <- &copyOp{src, dst}
-			return true
-		})
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		// this clones dirs
-		diff.LeftDirs.Range(func(nm string, _ *fio.Info) bool {
-			src := filepath.Join(cc.Src, nm)
-			dst := filepath.Join(cc.Dst, nm)
-			cc.och <- &copyOp{src, dst}
-			return true
-		})
-		wg.Done()
-	}()
-
-	// submit all the work and then tell workers we're done
-	go func() {
-		wg.Wait()
-		close(cc.och)
-	}()
-
-	// wait for workers to finish and collect any errors
-	cc.wg.Wait()
-	close(cc.ech)
-	ewg.Wait()
-
-	if len(errs) > 0 {
-		return errors.Join(errs...)
-	}
-
-	// merge the various dir shards into a single one
-	dirmap := cc.dirs[0]
-	for _, dirs := range cc.dirs[1:] {
-		for nm := range dirs {
-			dirmap[nm] = true
-		}
-	}
-
-	return cc.fixup(dirmap)
+	return &FunnyError{f}
 }
-
-func (cc *dircloner) worker(i int) {
-	dirs := make(map[string]bool, 8)
-
-	track := func(p string) {
-			dn := filepath.Dir(p)
-			dirs[dn] = true
-		}
-
-	for o := range cc.och {
-		switch z := o.(type) {
-		case copyOp:
-			if err := File(z.dst, z.src); err != nil {
-				cc.ech <- err
-			} else {
-				track(z.dst)
-			}
-
-		case delOp:
-			err := os.RemoveAll(z.name)
-			if err != nil && !os.IsNotExist(err) {
-				cc.ech <- &Error{"rm", diff.Src, diff.Dst, err}
-			} else {
-				track(z.name)
-			}
-		}
-	}
-
-	cc.dirs[i] = dirs
-	cc.wg.Done()
-}
-*/
