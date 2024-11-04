@@ -47,7 +47,7 @@ func UpdateMetadata(dst string, fi *fio.Info) error {
 func File(dst, src string) error {
 	fi, err := fio.Lstat(src)
 	if err != nil {
-		return &Error{"xstat-src", src, dst, err}
+		return &Error{"stat-src", src, dst, err}
 	}
 
 	s, err := os.Open(src)
