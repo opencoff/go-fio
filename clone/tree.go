@@ -248,8 +248,12 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 
 	for p := range dmap {
 		nm, _ := filepath.Rel(cc.Dst, p)
-		if nm != "." {
-			src := filepath.Join(cc.Src, nm)
+		if nm == "." {
+			continue
+		}
+
+		src := filepath.Join(cc.Src, nm)
+		if _, err := fio.Lstat(src); err == nil {
 			wp.Submit(copyOp{src, p})
 		}
 	}

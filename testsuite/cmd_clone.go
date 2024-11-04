@@ -25,7 +25,6 @@ func (t *cloneCmd) Name() string {
 }
 
 func (t *cloneCmd) Run(env *TestEnv, args []string) error {
-
 	var funny []string
 
 	// gather any args
@@ -49,9 +48,9 @@ func (t *cloneCmd) Run(env *TestEnv, args []string) error {
 
 	err := clone.Tree(env.Rhs, env.Lhs, clone.WithWalkOptions(wo))
 	if err != nil {
-		var ferr clone.FunnyError
+		var ferr *clone.FunnyError
 		if errors.As(err, &ferr) && len(funny) > 0 {
-			return matchFunny(&ferr, funny)
+			return matchFunny(ferr, funny)
 		}
 
 		return err
