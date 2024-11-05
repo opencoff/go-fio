@@ -27,6 +27,20 @@ import (
 
 type Option func(o *treeopt)
 
+// Observer is invoked when the tree cloner makes progress.
+// The Difference method is called just before starting the
+// I/O operation. For every entry that is processed, Tree()
+// invokes the Copy or Delete methods. The final metadata
+// fixup step is tracked by the MetadataUpdate method.
+type Observer interface {
+	Difference(d *cmp.Difference)
+
+	Copy(dst, src string)
+	Delete(nm string)
+
+	MetadataUpdate(dst, src string)
+}
+
 // WithIgnoreAttr captures the attributes of fio.Info that must be
 // ignored for comparing equality of two filesystem entries.
 func WithIgnoreAttr(fl cmp.IgnoreFlag) Option {
@@ -44,7 +58,17 @@ func WithWalkOptions(wo walk.Options) Option {
 	}
 }
 
+// WithObserver uses 'ob' to report activities as the tree
+// cloner makes progress
+func WithObserver(ob Observer) Option {
+	return func(o *treeopt) {
+		o.observer = ob
+	}
+}
+
 type treeopt struct {
+	observer Observer
+
 	fl cmp.IgnoreFlag
 
 	walkopt walk.Options
@@ -52,6 +76,7 @@ type treeopt struct {
 
 func defaultOptions() treeopt {
 	opt := treeopt{
+		observer: NopObserver(),
 		walkopt: walk.Options{
 			Concurrency: runtime.NumCPU(),
 			Type:        walk.ALL,
@@ -114,6 +139,7 @@ func Tree(dst, src string, opt ...Option) error {
 }
 
 type dircloner struct {
+	o Observer
 	*cmp.Difference
 
 	ncpu int
@@ -130,6 +156,7 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 	ncpu := opt.walkopt.Concurrency
 
 	cc := &dircloner{
+		o:          opt.observer,
 		Difference: d,
 		ncpu:       ncpu,
 		ech:        make(chan error, 1),
@@ -140,6 +167,8 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 	for i := 0; i < ncpu; i++ {
 		cc.dirs[i] = make(map[string]bool, 8)
 	}
+
+	cc.o.Difference(d)
 
 	return cc
 }
@@ -243,6 +272,7 @@ func (cc *dircloner) clone() error {
 func (cc *dircloner) fixup(dmap map[string]bool) error {
 	// clone dir metadata of modified dirs
 	wp := fio.NewWorkPool[copyOp](cc.ncpu, func(_ int, w copyOp) error {
+		cc.o.MetadataUpdate(w.dst, w.src)
 		return File(w.dst, w.src)
 	})
 
@@ -271,12 +301,14 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 
 	switch z := w.(type) {
 	case *copyOp:
+		cc.o.Copy(z.dst, z.src)
 		if err := File(z.dst, z.src); err != nil {
 			return dirs, err
 		}
 		track(z.dst)
 
 	case *delOp:
+		cc.o.Delete(z.name)
 		err := os.RemoveAll(z.name)
 		if err != nil && !os.IsNotExist(err) {
 			return dirs, &Error{"rm", cc.Src, cc.Dst, err}
@@ -308,4 +340,26 @@ func newFunnyError(m *cmp.FioPairMap) *FunnyError {
 	})
 
 	return &FunnyError{f}
+}
+
+// NopObserver implements Observer and throws away all input.
+// ie it's a no-op
+func NopObserver() Observer {
+	return &dummyObserver{}
+}
+
+type dummyObserver struct{}
+
+var _ Observer = &dummyObserver{}
+
+func (d *dummyObserver) Difference(_ *cmp.Difference) {
+}
+
+func (d *dummyObserver) Copy(_, _ string) {
+}
+
+func (d *dummyObserver) Delete(_ string) {
+}
+
+func (d *dummyObserver) MetadataUpdate(_, _ string) {
 }

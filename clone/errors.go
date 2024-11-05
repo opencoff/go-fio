@@ -68,7 +68,7 @@ func (e *FunnyError) Error() string {
 	return b.String()
 }
 
-// Unwrap returns the underlying wrapped error; in our 
+// Unwrap returns the underlying wrapped error; in our
 // case this is a "leaf" error.
 func (e *FunnyError) Unwrap() error {
 	return nil
