@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/opencoff/go-fio"
@@ -174,9 +175,27 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 }
 
 func (cc *dircloner) clone() error {
+	// first make the new dirs before attempting to make files.
+	// We need to do this first before we copy over any new files.
+	dirs := dirlist(cc.LeftDirs)
+	dirWp := fio.NewWorkPool[copyOp](cc.ncpu, func(_ int, w copyOp) error {
+		cc.o.Copy(w.dst, w.src)
+		return File(w.dst, w.src)
+	})
+	for _, nm := range dirs {
+		src := filepath.Join(cc.Src, nm)
+		dst := filepath.Join(cc.Dst, nm)
+		dirWp.Submit(copyOp{src, dst})
+	}
+	dirWp.Close()
+	if err := dirWp.Wait(); err != nil {
+		return err
+	}
 
+	// now start copying and deleting files
 	// each worker will track the dirs they modify in a sharded map
 	// the shards will be combined later
+
 	wp := fio.NewWorkPool[work](cc.ncpu, func(i int, w work) error {
 		var err error
 		cc.dirs[i], err = cc.dowork(cc.dirs[i], w)
@@ -224,18 +243,6 @@ func (cc *dircloner) clone() error {
 	wg.Add(1)
 	go func() {
 		cc.LeftFiles.Range(func(nm string, _ *fio.Info) bool {
-			src := filepath.Join(cc.Src, nm)
-			dst := filepath.Join(cc.Dst, nm)
-			wp.Submit(&copyOp{src, dst})
-			return true
-		})
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		// this clones dirs
-		cc.LeftDirs.Range(func(nm string, _ *fio.Info) bool {
 			src := filepath.Join(cc.Src, nm)
 			dst := filepath.Join(cc.Dst, nm)
 			wp.Submit(&copyOp{src, dst})
@@ -319,6 +326,41 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 		return dirs, &Error{"clone", cc.Src, cc.Dst, err}
 	}
 	return dirs, nil
+}
+
+// take a list of paths and return only longest prefixes
+func dirlist(m *cmp.FioMap) []string {
+	if m.Size() == 0 {
+		return []string{}
+	}
+
+	keys := make([]string, 0, m.Size())
+	m.Range(func(nm string, _ *fio.Info) bool {
+		keys = append(keys, nm)
+		return true
+	})
+
+	return longestPrefixes(keys)
+}
+
+func longestPrefixes(keys []string) []string {
+	slices.Sort(keys)
+
+	// now iterate through the array and find the longest prefixes
+	dirs := keys[:0]
+	cur := keys[0]
+	for _, nm := range keys[1:] {
+		if len(nm) >= len(cur) && nm[0:len(cur)] == cur {
+			cur = nm
+		} else {
+			// entirely different item, output this and
+			// reset
+			dirs = append(dirs, cur)
+			cur = nm
+		}
+	}
+	dirs = append(dirs, cur)
+	return dirs
 }
 
 type work any

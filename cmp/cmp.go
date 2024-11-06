@@ -152,61 +152,6 @@ type FioMap = xsync.MapOf[string, *fio.Info]
 // corresponding Stat/Lstat info of both the source and destination.
 type FioPairMap = xsync.MapOf[string, Pair]
 
-func newMap() *FioMap {
-	return xsync.NewMapOf[string, *fio.Info]()
-}
-
-func newPairMap() *FioPairMap {
-	return xsync.NewMapOf[string, Pair]()
-}
-
-// DirTree compares two directory trees 'src' and 'dst'.  For regular files,
-// it compares file size and mtime to determine change.
-// For all entries, it compares every comparable attribute of fio.Info - unless
-// explicitly ignored (by using the option WithIgnore()).
-func DirTree(src, dst string, opt ...Option) (*Difference, error) {
-	option := defaultOptions()
-
-	for _, fp := range opt {
-		fp(&option)
-	}
-
-	c, err := newCmp(src, dst, &option)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = c.gatherSrc(); err != nil {
-		return nil, err
-	}
-
-	if err = c.gatherDst(); err != nil {
-		return nil, err
-	}
-
-	// now we have differences - pull them together
-	d := &Difference{
-		Src: src,
-		Dst: dst,
-
-		LeftDirs:   c.lhsDir,
-		LeftFiles:  c.lhsFile,
-		RightDirs:  c.rhsDir,
-		RightFiles: c.rhsFile,
-
-		CommonDirs:  c.commonDir,
-		CommonFiles: c.commonFile,
-		Diff:        c.diff,
-		Funny:       c.funny,
-	}
-
-	// we don't need this anymore. we can get rid of it.
-	c.cache.Clear()
-	c.done.Clear()
-
-	return d, nil
-}
-
 // Difference captures the results of comparing two directory trees
 type Difference struct {
 	Src string
@@ -261,6 +206,61 @@ func (d *Difference) String() string {
 
 	b.WriteString("---End Diff Output---\n")
 	return b.String()
+}
+
+func newMap() *FioMap {
+	return xsync.NewMapOf[string, *fio.Info]()
+}
+
+func newPairMap() *FioPairMap {
+	return xsync.NewMapOf[string, Pair]()
+}
+
+// DirTree compares two directory trees 'src' and 'dst'.  For regular files,
+// it compares file size and mtime to determine change.
+// For all entries, it compares every comparable attribute of fio.Info - unless
+// explicitly ignored (by using the option WithIgnore()).
+func DirTree(src, dst string, opt ...Option) (*Difference, error) {
+	option := defaultOptions()
+
+	for _, fp := range opt {
+		fp(&option)
+	}
+
+	c, err := newCmp(src, dst, &option)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = c.gatherSrc(); err != nil {
+		return nil, err
+	}
+
+	if err = c.gatherDst(); err != nil {
+		return nil, err
+	}
+
+	// now we have differences - pull them together
+	d := &Difference{
+		Src: src,
+		Dst: dst,
+
+		LeftDirs:   c.lhsDir,
+		LeftFiles:  c.lhsFile,
+		RightDirs:  c.rhsDir,
+		RightFiles: c.rhsFile,
+
+		CommonDirs:  c.commonDir,
+		CommonFiles: c.commonFile,
+		Diff:        c.diff,
+		Funny:       c.funny,
+	}
+
+	// we don't need this anymore. we can get rid of it.
+	c.cache.Clear()
+	c.done.Clear()
+
+	return d, nil
 }
 
 // clone src to dst; we know both are dirs
