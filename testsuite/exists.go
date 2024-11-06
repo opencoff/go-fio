@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"io/fs"
+	"errors"
 )
 
 // Return true if dir exists, false otherwise
@@ -18,7 +20,7 @@ func DirExists(dn string) (bool, error) {
 		return false, fmt.Errorf("%s: entry exists but not a dir", dn)
 	}
 
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
 
@@ -36,7 +38,7 @@ func FileExists(dn string) (bool, error) {
 		return false, fmt.Errorf("%s: entry exists but not a file", dn)
 	}
 
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
 

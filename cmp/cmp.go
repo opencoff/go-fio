@@ -14,9 +14,9 @@
 package cmp
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -363,7 +363,7 @@ func (c *cmp) processLhs(lhs *fio.Info) error {
 	dst := filepath.Join(c.dst, nm)
 	rhs, err := c.cache.Lstat(dst)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			if lhs.IsDir() {
 				c.lhsDir.Store(nm, lhs)
 			} else {

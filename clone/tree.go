@@ -14,7 +14,9 @@
 package clone
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -67,9 +69,24 @@ func WithObserver(ob Observer) Option {
 	}
 }
 
+// WithIgnoreMissing ensures that the cloner skips over
+// files that disappear between the initial directory scan
+// and concurrent differencing/copying.
+func WithIgnoreMissing(ign bool) Option {
+	return func(o *treeopt) {
+		o.ignoreMissing = ign
+	}
+}
+
 type treeopt struct {
+	// to report progress
 	observer Observer
 
+	// skip files that disappeared
+	ignoreMissing bool
+
+	// file attrs to ignore while computing
+	// file equality.
 	fl cmp.IgnoreFlag
 
 	walkopt walk.Options
@@ -100,7 +117,7 @@ func Tree(dst, src string, opt ...Option) error {
 
 	di, err := fio.Lstat(dst)
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			return &Error{"lstat-dst", src, dst, err}
 		}
 
@@ -141,13 +158,12 @@ func Tree(dst, src string, opt ...Option) error {
 
 type dircloner struct {
 	o Observer
+
+	ignoreMissing bool
+
 	*cmp.Difference
 
 	ncpu int
-
-	ech chan error
-	och chan work
-	wg  sync.WaitGroup
 
 	// sharded dirs that are modified
 	dirs []map[string]bool
@@ -157,12 +173,11 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 	ncpu := opt.walkopt.Concurrency
 
 	cc := &dircloner{
-		o:          opt.observer,
-		Difference: d,
-		ncpu:       ncpu,
-		ech:        make(chan error, 1),
-		och:        make(chan work, ncpu),
-		dirs:       make([]map[string]bool, ncpu),
+		o:             opt.observer,
+		ignoreMissing: opt.ignoreMissing,
+		Difference:    d,
+		ncpu:          ncpu,
+		dirs:          make([]map[string]bool, ncpu),
 	}
 
 	for i := 0; i < ncpu; i++ {
@@ -180,7 +195,13 @@ func (cc *dircloner) clone() error {
 	dirs := dirlist(cc.LeftDirs)
 	dirWp := fio.NewWorkPool[copyOp](cc.ncpu, func(_ int, w copyOp) error {
 		cc.o.Copy(w.dst, w.src)
-		return File(w.dst, w.src)
+		if err := File(w.dst, w.src); err != nil {
+			if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	})
 	for _, nm := range dirs {
 		src := filepath.Join(cc.Src, nm)
@@ -280,7 +301,13 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 	// clone dir metadata of modified dirs
 	wp := fio.NewWorkPool[copyOp](cc.ncpu, func(_ int, w copyOp) error {
 		cc.o.MetadataUpdate(w.dst, w.src)
-		return File(w.dst, w.src)
+		if err := File(w.dst, w.src); err != nil {
+			if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	})
 
 	for p := range dmap {
@@ -310,6 +337,9 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 	case *copyOp:
 		cc.o.Copy(z.dst, z.src)
 		if err := File(z.dst, z.src); err != nil {
+			if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
+				return dirs, nil
+			}
 			return dirs, err
 		}
 		track(z.dst)
@@ -317,7 +347,7 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 	case *delOp:
 		cc.o.Delete(z.name)
 		err := os.RemoveAll(z.name)
-		if err != nil && !os.IsNotExist(err) {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return dirs, &Error{"rm", cc.Src, cc.Dst, err}
 		}
 		track(z.name)
@@ -340,9 +370,11 @@ func dirlist(m *cmp.FioMap) []string {
 		return true
 	})
 
-	return longestPrefixes(keys)
+	slices.Sort(keys)
+	return keys
 }
 
+// for now this is unused
 func longestPrefixes(keys []string) []string {
 	slices.Sort(keys)
 
