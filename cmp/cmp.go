@@ -55,11 +55,14 @@ func (f IgnoreFlag) String() string {
 type cmpopt struct {
 	walk.Options
 
-	deepEq func(lhs, rhs *fio.Info) bool
-
 	// file-sys attributes to ignore for equality comparison
 	// Used by cmp.DirCmp
 	ignoreAttr IgnoreFlag
+
+	deepEq func(lhs, rhs *fio.Info) bool
+
+	o   Observer
+
 }
 
 func defaultOptions() cmpopt {
@@ -72,6 +75,7 @@ func defaultOptions() cmpopt {
 			Excludes:       []string{".zfs"},
 		},
 		ignoreAttr: 0,
+		o:	    &dummyObserver{},
 	}
 }
 
@@ -113,6 +117,23 @@ func WithDeepCompare(same func(lhs, rhs *fio.Info) bool) Option {
 		o.deepEq = same
 	}
 }
+
+// Observer is invoked when the comparator visits entries
+// in src and dst.
+type Observer interface {
+	VisitSrc(fi *fio.Info)
+	VisitDst(fi *fio.Info)
+}
+
+// WithObserver uses 'ob' to report activities as the tree
+// cloner makes progress
+func WithObserver(ob Observer) Option {
+	return func(o *cmpopt) {
+		o.o = ob
+	}
+}
+
+
 
 type cmp struct {
 	cmpopt
@@ -359,6 +380,8 @@ func (c *cmp) processLhs(lhs *fio.Info) error {
 		return nil
 	}
 
+	c.o.VisitSrc(lhs)
+
 	src := lhs.Name()
 	dst := filepath.Join(c.dst, nm)
 	rhs, err := c.cache.Lstat(dst)
@@ -423,6 +446,8 @@ func (c *cmp) gatherDst() error {
 		if nm == "." {
 			return nil
 		}
+
+		c.o.VisitDst(rhs)
 
 		if _, ok := c.done.Load(nm); ok {
 			return nil
@@ -530,3 +555,11 @@ func makeEqFunc(opts *cmpopt) fileqFunc {
 		return true, 0
 	}
 }
+
+
+type dummyObserver struct {}
+
+func (o *dummyObserver) VisitSrc(_ *fio.Info) {}
+func (o *dummyObserver) VisitDst(_ *fio.Info) {}
+
+var _ Observer = &dummyObserver{}

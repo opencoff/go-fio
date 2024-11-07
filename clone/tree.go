@@ -36,6 +36,8 @@ type Option func(o *treeopt)
 // invokes the Copy or Delete methods. The final metadata
 // fixup step is tracked by the MetadataUpdate method.
 type Observer interface {
+	cmp.Observer
+
 	Difference(d *cmp.Difference)
 
 	Copy(dst, src string)
@@ -137,6 +139,7 @@ func Tree(dst, src string, opt ...Option) error {
 	}
 
 	diff, err := cmp.DirTree(src, dst, cmp.WithIgnoreAttr(option.fl),
+		cmp.WithObserver(option.observer),
 		cmp.WithWalkOptions(option.walkopt))
 	if err != nil {
 		return &Error{"tree-diff", src, dst, err}
@@ -437,3 +440,6 @@ func (d *dummyObserver) Delete(_ string) {
 
 func (d *dummyObserver) MetadataUpdate(_, _ string) {
 }
+
+func (d *dummyObserver) VisitSrc(_ *fio.Info) {}
+func (d *dummyObserver) VisitDst(_ *fio.Info) {}
