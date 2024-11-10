@@ -138,7 +138,7 @@ func Tree(dst, src string, opt ...Option) error {
 		fp(&option)
 	}
 
-	diff, err := cmp.DirTree(src, dst, cmp.WithIgnoreAttr(option.fl),
+	diff, err := cmp.FsTree(src, dst, cmp.WithIgnoreAttr(option.fl),
 		cmp.WithObserver(option.observer),
 		cmp.WithWalkOptions(option.walkopt))
 	if err != nil {

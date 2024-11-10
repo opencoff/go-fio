@@ -116,7 +116,7 @@ func mkfiles(base string, paths []string, n int) error {
 }
 
 func treeEq(src, dst string, t *testing.T) error {
-	d, err := cmp.DirTree(src, dst)
+	d, err := cmp.FsTree(src, dst)
 	if err != nil {
 		return err
 	}

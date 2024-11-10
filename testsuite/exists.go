@@ -3,10 +3,10 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"io/fs"
 	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 )
 
 // Return true if dir exists, false otherwise
