@@ -24,6 +24,9 @@
 //	// submit work in a different go-routine
 //	pool.Submit(work)
 //
+//	...
+//	// close the pool after there is no more work to submit
+//	pool.Close()
 //
 //	...
 //	// wait for pool to complete the work

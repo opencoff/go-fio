@@ -70,6 +70,12 @@ type Options struct {
 	// stay within the same file-system
 	OneFS bool
 
+	// Ignore duplicate inodes. Turning this on
+	// suppresses entries with hardlink count greater
+	// than 1 - for those entries, only the first encountered
+	// entry is output.
+	IgnoreDuplicateInode bool
+
 	// Types of entries to return
 	Type Type
 
@@ -449,6 +455,7 @@ func (d *walkState) walkPath(nm string) {
 
 		// don't process entries we've already seen
 		if d.isEntrySeen(fi) {
+			fmt.Printf("%s: +dup-inode\n", fp)
 			continue
 		}
 
@@ -526,6 +533,10 @@ func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
 // track this inode to detect loops; return true if we've seen it before
 // false otherwise.
 func (d *walkState) isEntrySeen(st *fio.Info) bool {
+	if !d.IgnoreDuplicateInode {
+		return false
+	}
+
 	key := fmt.Sprintf("%d:%d:%d", st.Dev, st.Rdev, st.Ino)
 	x, ok := d.ino.LoadOrStore(key, st)
 	if !ok {
