@@ -78,10 +78,12 @@ func getTmpdir(t *testing.T) string {
 		tmpdir = filepath.Join(*testDir, t.Name())
 		err := os.MkdirAll(tmpdir, 0700)
 		assert(err == nil, "mkdir %s: %s", tmpdir, err)
-		t.Logf("Using %s as test dir .. \n", tmpdir)
 		t.Cleanup(func() {
-			t.Logf("cleaning up %s ..\n", tmpdir)
-			os.RemoveAll(tmpdir)
+			if t.Failed() {
+				t.Logf("preserving %s ..\n", tmpdir)
+			} else {
+				os.RemoveAll(tmpdir)
+			}
 		})
 	}
 	return tmpdir
