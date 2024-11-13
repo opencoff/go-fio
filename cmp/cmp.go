@@ -146,38 +146,24 @@ type cmp struct {
 
 	src, dst string
 
-	lhs, rhs *FioMap
+	lhs, rhs *fio.FioMap
 
 	fileEq fileqFunc
 
-	lhsDir  *FioMap
-	lhsFile *FioMap
-	rhsDir  *FioMap
-	rhsFile *FioMap
+	lhsDir  *fio.FioMap
+	lhsFile *fio.FioMap
+	rhsDir  *fio.FioMap
+	rhsFile *fio.FioMap
 
-	commonDir  *FioPairMap
-	commonFile *FioPairMap
+	commonDir  *fio.FioPairMap
+	commonFile *fio.FioPairMap
 
-	diff *FioPairMap
+	diff *fio.FioPairMap
 
-	funny *FioPairMap
+	funny *fio.FioPairMap
 
 	done *xsync.MapOf[string, bool]
 }
-
-// Pair represents the Stat/Lstat info of a pair of
-// related file system entries in the source and destination
-type Pair struct {
-	Src, Dst *fio.Info
-}
-
-// FioMap is a concurrency safe map of relative path name and the
-// corresponding Stat/Lstat info.
-type FioMap = xsync.MapOf[string, *fio.Info]
-
-// FioPairMap is a concurrency safe map of relative path name and the
-// corresponding Stat/Lstat info of both the source and destination.
-type FioPairMap = xsync.MapOf[string, Pair]
 
 // Difference captures the results of comparing two directory trees
 type Difference struct {
@@ -185,37 +171,37 @@ type Difference struct {
 	Dst string
 
 	// All the entries in the src and dst
-	Lhs *FioMap
-	Rhs *FioMap
+	Lhs *fio.FioMap
+	Rhs *fio.FioMap
 
 	// Dirs that are only on the left
-	LeftDirs *FioMap
+	LeftDirs *fio.FioMap
 
 	// Files that are only on the left
-	LeftFiles *FioMap
+	LeftFiles *fio.FioMap
 
 	// Dirs that are only on the right
-	RightDirs *FioMap
+	RightDirs *fio.FioMap
 
 	// Files that are only on the right
-	RightFiles *FioMap
+	RightFiles *fio.FioMap
 
 	// Dirs that are identical on both sides
-	CommonDirs *FioPairMap
+	CommonDirs *fio.FioPairMap
 
 	// Files that are identical on both sides
-	CommonFiles *FioPairMap
+	CommonFiles *fio.FioPairMap
 
 	// Files/dirs that are different on both sides
-	Diff *FioPairMap
+	Diff *fio.FioPairMap
 
 	// Funny entries
-	Funny *FioPairMap
+	Funny *fio.FioPairMap
 }
 
 func (d *Difference) String() string {
 	var b strings.Builder
-	d1 := func(desc string, m *FioMap) {
+	d1 := func(desc string, m *fio.FioMap) {
 		if m.Size() <= 0 {
 			return
 		}
@@ -227,13 +213,13 @@ func (d *Difference) String() string {
 		})
 	}
 
-	d2 := func(desc string, m *FioPairMap) {
+	d2 := func(desc string, m *fio.FioPairMap) {
 		if m.Size() <= 0 {
 			return
 		}
 
 		fmt.Fprintf(&b, "%s:\n", desc)
-		m.Range(func(nm string, p Pair) bool {
+		m.Range(func(nm string, p fio.Pair) bool {
 			fmt.Fprintf(&b, "\t%s:\n\t\tsrc %s\n\t\tdst %s\n", nm, p.Src, p.Dst)
 			return true
 		})
@@ -254,14 +240,6 @@ func (d *Difference) String() string {
 
 	b.WriteString("---End Diff Output---\n")
 	return b.String()
-}
-
-func newMap() *FioMap {
-	return xsync.NewMapOf[string, *fio.Info]()
-}
-
-func newPairMap() *FioPairMap {
-	return xsync.NewMapOf[string, Pair]()
 }
 
 // FsTree compares two file system trees 'src' and 'dst'.  For regular files,
@@ -314,7 +292,7 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 // generates the differences between them. It is almost identical to
 // FsTree above - except Diff doesn't do any disk I/O. As a result,
 // the option WithWalkOption is not useful.
-func Diff(lhs, rhs *FioMap, opt ...Option) (*Difference, error) {
+func Diff(lhs, rhs *fio.FioMap, opt ...Option) (*Difference, error) {
 	option := defaultOptions()
 	for _, fp := range opt {
 		fp(&option)
@@ -329,7 +307,7 @@ func Diff(lhs, rhs *FioMap, opt ...Option) (*Difference, error) {
 
 // common function to do the actual diff of the two trees.
 // This is a CPU bound activity that shouldn't have any errors
-func cmpInternal(lhs, rhs *FioMap, opt *cmpopt) *Difference {
+func cmpInternal(lhs, rhs *fio.FioMap, opt *cmpopt) *Difference {
 	c := newCmp(lhs, rhs, opt)
 
 	// There should be no error from the plain differencing
@@ -361,7 +339,7 @@ func cmpInternal(lhs, rhs *FioMap, opt *cmpopt) *Difference {
 }
 
 // clone src to dst; we know both are dirs
-func newCmp(lhs, rhs *FioMap, opt *cmpopt) *cmp {
+func newCmp(lhs, rhs *fio.FioMap, opt *cmpopt) *cmp {
 	c := &cmp{
 		cmpopt: *opt,
 		lhs:    lhs,
@@ -370,15 +348,15 @@ func newCmp(lhs, rhs *FioMap, opt *cmpopt) *cmp {
 		fileEq: makeEqFunc(opt),
 
 		// the map-value for each of these is the lhs fio.Info
-		lhsDir:  newMap(),
-		lhsFile: newMap(),
-		rhsDir:  newMap(),
-		rhsFile: newMap(),
+		lhsDir:  fio.NewFioMap(),
+		lhsFile: fio.NewFioMap(),
+		rhsDir:  fio.NewFioMap(),
+		rhsFile: fio.NewFioMap(),
 
-		commonDir:  newPairMap(),
-		commonFile: newPairMap(),
-		diff:       newPairMap(),
-		funny:      newPairMap(),
+		commonDir:  fio.NewFioPairMap(),
+		commonFile: fio.NewFioPairMap(),
+		diff:       fio.NewFioPairMap(),
+		funny:      fio.NewFioPairMap(),
 
 		done: xsync.NewMapOf[string, bool](),
 	}
@@ -387,8 +365,8 @@ func newCmp(lhs, rhs *FioMap, opt *cmpopt) *cmp {
 }
 
 // walk the dir 'nm' and return the full fs tree
-func walkTree(nm string, wo walk.Options) (*FioMap, error) {
-	tree := newMap()
+func walkTree(nm string, wo walk.Options) (*fio.FioMap, error) {
+	tree := fio.NewFioMap()
 
 	err := walk.WalkFunc([]string{nm}, wo, func(fi *fio.Info) error {
 		rel, _ := filepath.Rel(nm, fi.Name())

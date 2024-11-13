@@ -14,8 +14,9 @@
 package cmp
 
 import (
-	"github.com/opencoff/go-fio"
 	"io/fs"
+
+	"github.com/opencoff/go-fio"
 )
 
 type work struct {
@@ -71,7 +72,7 @@ func (c *cmp) lhsDiff(nm string, lhs *fio.Info) {
 	}
 
 	// we have two similar named entries on both sides
-	pair := Pair{lhs, rhs}
+	pair := fio.Pair{lhs, rhs}
 
 	// if the file types don't match - skip
 	if (lhs.Mod & ^fs.ModePerm) != (rhs.Mod & ^fs.ModePerm) {

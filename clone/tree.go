@@ -267,7 +267,7 @@ func (cc *dircloner) clone() error {
 	// now submit copies
 	wg.Add(1)
 	go func() {
-		cc.Diff.Range(func(_ string, p cmp.Pair) bool {
+		cc.Diff.Range(func(_ string, p fio.Pair) bool {
 			src := p.Src.Name()
 			dst := p.Dst.Name()
 
@@ -404,7 +404,7 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 }
 
 // take a list of paths and return only longest prefixes
-func dirlist(m *cmp.FioMap) []string {
+func dirlist(m *fio.FioMap) []string {
 	if m.Size() == 0 {
 		return []string{}
 	}
@@ -454,10 +454,10 @@ type linkOp struct {
 	src, dst string
 }
 
-func newFunnyError(m *cmp.FioPairMap) *FunnyError {
+func newFunnyError(m *fio.FioPairMap) *FunnyError {
 	var f []FunnyEntry
 
-	m.Range(func(nm string, p cmp.Pair) bool {
+	m.Range(func(nm string, p fio.Pair) bool {
 		f = append(f, FunnyEntry{nm, p.Src, p.Dst})
 		return true
 	})

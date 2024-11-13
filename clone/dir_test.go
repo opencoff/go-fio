@@ -204,7 +204,7 @@ func treeEq(src, dst string, t *testing.T) error {
 	return nil
 }
 
-func xerror(pref string, m *cmp.FioMap) error {
+func xerror(pref string, m *fio.FioMap) error {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s:\n", pref)
@@ -216,11 +216,11 @@ func xerror(pref string, m *cmp.FioMap) error {
 	return fmt.Errorf("error - %s", b.String())
 }
 
-func yerror(pref string, m *cmp.FioPairMap) error {
+func yerror(pref string, m *fio.FioPairMap) error {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s:\n", pref)
-	m.Range(func(nm string, p cmp.Pair) bool {
+	m.Range(func(nm string, p fio.Pair) bool {
 		fmt.Fprintf(&b, "\t%s:\n\t\t%s\n\t\t%s\n", nm, p.Src, p.Dst)
 		return true
 	})
