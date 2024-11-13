@@ -78,8 +78,11 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 	var z int
 
 	b, z = dec32[int](b)
-	if len(b) < z || z < _FixedEncodingSize {
-		return 0, fmt.Errorf("unmarshal: buf %d: %w", z, ErrTooSmall)
+	if len(b) < z {
+		return 0, fmt.Errorf("unmarshal: buf %d; want %d: %w", len(b), z, ErrTooSmall)
+	}
+	if z < _FixedEncodingSize {
+		return 0, fmt.Errorf("unmarshal: buf exp %d, have %d: %w", z, len(b), ErrTooSmall)
 	}
 
 	// let compiler know we are sized correctly

@@ -46,6 +46,9 @@ type Info struct {
 
 const (
 	// The encoded size of the fixed-width elements of Info
+	// 12b for each time field x 3
+	// 4b  for each of uint32 x 3
+	// 8b  for each uint64 x 4
 	_FixedEncodingSize int = (3 * 12) + (4 * 4) + (4 * 8)
 )
 
