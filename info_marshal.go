@@ -68,6 +68,17 @@ func (ii *Info) MarshalTo(b []byte) (int, error) {
 	return sz, nil
 }
 
+
+// Marshal marshals 'ii' into a correctly sized buffer and returns it
+func (ii *Info) Marshal() ([]byte, error) {
+	b := make([]byte, ii.MarshalSize())
+	_, err := ii.MarshalTo(b)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
 // Unmarshal unmarshals the byte stream 'b' into a full rehydrated
 // instance 'ii'. It returns the number of bytes consumed.
 func (ii *Info) Unmarshal(b []byte) (int, error) {
