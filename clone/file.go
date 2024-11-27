@@ -50,15 +50,15 @@ func File(dst, src string) error {
 		return &Error{"stat-src", src, dst, err}
 	}
 
-	s, err := os.Open(src)
-	if err != nil {
-		return &Error{"open-src", src, dst, err}
-	}
-
-	defer s.Close()
-
 	mode := fi.Mode()
 	if mode.IsRegular() {
+		s, err := os.Open(src)
+		if err != nil {
+			return &Error{"open-src", src, dst, err}
+		}
+
+		defer s.Close()
+
 		if err = copyRegular(dst, s, fi); err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func File(dst, src string) error {
 	//case ModeSocket: XXX Add named socket support
 
 	default:
-		err = fmt.Errorf("unsupported type %#x", mode)
+		err = fmt.Errorf("unsupported type %s", mode.Type())
 		return &Error{"file-type", src, dst, err}
 	}
 

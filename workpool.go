@@ -80,7 +80,7 @@ func NewWorkPool[Work any](nworkers int, fp func(i int, w Work) error) *WorkPool
 	wp.stopped.Store(false)
 	wp.wg.Add(nworkers)
 	for i := 0; i < nworkers; i++ {
-		go func(i int, fp func(i int, w Work) error) {
+		go func(wp *WorkPool[Work], i int, fp func(i int, w Work) error) {
 			defer func() {
 				if e := recover(); e != nil {
 					if err := e.(error); err != nil {
@@ -96,7 +96,7 @@ func NewWorkPool[Work any](nworkers int, fp func(i int, w Work) error) *WorkPool
 				}
 			}
 			wp.wg.Done()
-		}(i, fp)
+		}(wp, i, fp)
 	}
 
 	// harvest errors

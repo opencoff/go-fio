@@ -68,7 +68,6 @@ func (ii *Info) MarshalTo(b []byte) (int, error) {
 	return sz, nil
 }
 
-
 // Marshal marshals 'ii' into a correctly sized buffer and returns it
 func (ii *Info) Marshal() ([]byte, error) {
 	b := make([]byte, ii.MarshalSize())
