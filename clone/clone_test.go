@@ -20,6 +20,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	"github.com/opencoff/go-fio"
 	"github.com/opencoff/go-mmap"
@@ -52,8 +53,8 @@ func TestCloneDir(t *testing.T) {
 
 func TestCloneRegFile(t *testing.T) {
 	assert := newAsserter(t)
-
 	tmp := getTmpdir(t)
+
 	nm := path.Join(tmp, "testfile")
 	err := mkfilex(nm)
 	assert(err == nil, "test file %s: %s", nm, err)
@@ -73,6 +74,31 @@ func TestCloneRegFile(t *testing.T) {
 	// to the src
 	err = mdEqual(dst, nm)
 	assert(err == nil, "clonereg: %s", err)
+}
+
+func TestCloneMtime(t *testing.T) {
+	assert := newAsserter(t)
+	tmp := getTmpdir(t)
+
+	nm := path.Join(tmp, "testfile")
+	err := mkfilex(nm)
+	assert(err == nil, "test file %s: %s", nm, err)
+
+	st, err := fio.Lstat(nm)
+	assert(err == nil, "lstat: %s", err)
+
+	time.Sleep(1 * time.Second)
+
+	for i := range 20 {
+		fn := fmt.Sprintf("%s.%d", nm, i)
+		err := fio.CopyFile(fn, nm, st.Mode())
+		assert(err == nil, "cp %s: %s", fn, err)
+
+		err = UpdateMetadata(fn, st)
+		assert(err == nil, "update-md: %s: %s", fn, err)
+		err = mdEqual(fn, nm)
+		assert(err == nil, "md: %s: %s", fn, err)
+	}
 }
 
 func TestCloneSymlink(t *testing.T) {
