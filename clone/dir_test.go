@@ -236,6 +236,9 @@ var _ Observer = &po{}
 func (o *po) Difference(d *cmp.Difference) {
 	fmt.Printf("# %s\n", d)
 }
+func (o *po) Mkdir(d string) {
+	fmt.Printf("# mkdir %s\n", d)
+}
 func (o *po) Copy(d, s string) {
 	fmt.Printf("# cp %s %s\n", s, d)
 }

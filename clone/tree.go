@@ -40,6 +40,9 @@ type Observer interface {
 
 	Difference(d *cmp.Difference)
 
+	// mkdir dst
+	Mkdir(dst string)
+
 	// copy file src -> dst
 	Copy(dst, src string)
 
@@ -196,7 +199,6 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 }
 
 func (cc *dircloner) xcopy(dst, src string) error {
-	cc.o.Copy(dst, src)
 	if err := File(dst, src); err != nil {
 		if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
 			return nil
@@ -221,6 +223,7 @@ func (cc *dircloner) clone() error {
 
 		dm[dst] = true
 		dirWp.Submit(copyOp{src, dst})
+		cc.o.Mkdir(dst)
 	}
 	dirWp.Close()
 	if err := dirWp.Wait(); err != nil {
@@ -250,6 +253,7 @@ func (cc *dircloner) clone() error {
 	go func() {
 		cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
 			wp.Submit(&delOp{fi.Name()})
+			cc.o.Delete(fi.Name())
 			return true
 		})
 		wg.Done()
@@ -259,6 +263,7 @@ func (cc *dircloner) clone() error {
 	go func() {
 		cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
 			wp.Submit(&delOp{fi.Name()})
+			cc.o.Delete(fi.Name())
 			return true
 		})
 		wg.Done()
@@ -273,6 +278,7 @@ func (cc *dircloner) clone() error {
 
 			if linked := cc.h.track(p.Src, dst); !linked {
 				wp.Submit(&copyOp{src, dst})
+				cc.o.Copy(dst, src)
 			}
 			return true
 		})
@@ -287,6 +293,7 @@ func (cc *dircloner) clone() error {
 
 			if linked := cc.h.track(fi, dst); !linked {
 				wp.Submit(&copyOp{src, dst})
+				cc.o.Copy(dst, src)
 			}
 			return true
 		})
@@ -314,6 +321,7 @@ func (cc *dircloner) clone() error {
 	go func() {
 		cc.h.hardlinks(func(d, s string) {
 			wp.Submit(&linkOp{s, d})
+			cc.o.Link(d, s)
 		})
 		wg.Done()
 	}()
@@ -341,7 +349,6 @@ func (cc *dircloner) clone() error {
 func (cc *dircloner) fixup(dmap map[string]bool) error {
 	// clone dir metadata of modified dirs
 	wp := fio.NewWorkPool[copyOp](cc.Concurrency, func(_ int, w copyOp) error {
-		cc.o.MetadataUpdate(w.dst, w.src)
 		if err := File(w.dst, w.src); err != nil {
 			if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
 				return nil
@@ -360,6 +367,7 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 		src := filepath.Join(cc.Src, nm)
 		if _, err := fio.Lstat(src); err == nil {
 			wp.Submit(copyOp{src, p})
+			cc.o.MetadataUpdate(p, src)
 		}
 	}
 
@@ -382,7 +390,6 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 		track(z.dst)
 
 	case *delOp:
-		cc.o.Delete(z.name)
 		err := os.RemoveAll(z.name)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return dirs, &Error{"rm", cc.Src, cc.Dst, err}
@@ -390,7 +397,6 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 		track(z.name)
 
 	case *linkOp:
-		cc.o.Link(z.dst, z.src)
 		_ = os.Remove(z.dst) // XXX There is no way to overwrite?
 		if err := os.Link(z.src, z.dst); err != nil {
 			return dirs, &Error{"ln", cc.Src, cc.Dst, err}
@@ -476,6 +482,7 @@ type dummyObserver struct{}
 var _ Observer = &dummyObserver{}
 
 func (d *dummyObserver) Difference(_ *cmp.Difference) {}
+func (d *dummyObserver) Mkdir(_ string)               {}
 func (d *dummyObserver) Copy(_, _ string)             {}
 func (d *dummyObserver) Delete(_ string)              {}
 func (d *dummyObserver) Link(_, _ string)             {}
