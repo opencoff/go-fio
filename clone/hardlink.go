@@ -50,7 +50,7 @@ func key(fi *fio.Info) string {
 }
 
 func (h *hardlinker) track(src *fio.Info, dst string) bool {
-	if src.Nlink == 1 {
+	if src.Nlink == 1 || !src.IsRegular() {
 		return false
 	}
 

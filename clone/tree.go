@@ -301,11 +301,8 @@ func (cc *dircloner) clone() error {
 	}()
 
 	// submit all the work and then tell workers we're done
-	go func() {
-		wg.Wait()
-		wp.Close()
-	}()
-
+	wg.Wait()
+	wp.Close()
 	if err := wp.Wait(); err != nil {
 		return err
 	}
@@ -348,8 +345,8 @@ func (cc *dircloner) clone() error {
 // random order
 func (cc *dircloner) fixup(dmap map[string]bool) error {
 	// clone dir metadata of modified dirs
-	wp := fio.NewWorkPool[copyOp](cc.Concurrency, func(_ int, w copyOp) error {
-		if err := File(w.dst, w.src); err != nil {
+	wp := fio.NewWorkPool[mdOp](cc.Concurrency, func(_ int, w mdOp) error {
+		if err := UpdateMetadata(w.dst, w.src); err != nil {
 			if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
 				return nil
 			}
@@ -358,22 +355,50 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 		return nil
 	})
 
-	for p := range dmap {
+	// reverse sort the list of dirs so we touch the deepest
+	// part of the tree first.
+	dlist := _Keys(dmap)
+	slices.SortFunc(dlist, func(a, b string) int {
+		if b < a {
+			return -1
+		}
+		if b > a {
+			return +1
+		}
+		return 0
+	})
+
+	var errs []error
+	for _, p := range dlist {
 		nm, _ := filepath.Rel(cc.Dst, p)
 		if nm == "." {
 			continue
 		}
 
 		src := filepath.Join(cc.Src, nm)
-		if _, err := fio.Lstat(src); err == nil {
-			wp.Submit(copyOp{src, p})
-			cc.o.MetadataUpdate(p, src)
+		fi, err := fio.Lstat(src)
+		if err != nil {
+			errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
+			continue
 		}
+		wp.Submit(mdOp{fi, p})
+		cc.o.MetadataUpdate(p, src)
 	}
 
 	wp.Close()
+	if err := wp.Wait(); err != nil {
+		errs = append(errs, err)
+		return &Error{"fixup", cc.Src, cc.Dst, errors.Join(errs...)}
+	}
+	return nil
+}
 
-	return wp.Wait()
+func _Keys[M ~map[K]V, K comparable, V any](m M) []K {
+	v := make([]K, 0, len(m))
+	for k := range m {
+		v = append(v, k)
+	}
+	return v
 }
 
 func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, error) {
@@ -458,6 +483,11 @@ type delOp struct {
 
 type linkOp struct {
 	src, dst string
+}
+
+type mdOp struct {
+	src *fio.Info
+	dst string
 }
 
 func newFunnyError(m *fio.FioPairMap) *FunnyError {
