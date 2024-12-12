@@ -86,20 +86,22 @@ func decstr(b []byte) ([]byte, string, error) {
 	return nil, "", fmt.Errorf("unmarshal: string: %w", ErrTooSmall)
 }
 
+// we represent time as a single uint64 in units of nanoseconds since
+// the start of Unix time. This means, our representation doesn't capture values
+// before Jan 1 1970 :-)
 func enctime(b []byte, t time.Time) []byte {
-	sec := t.Unix()
-	nsec := uint32(t.Nanosecond())
-	b = enc64(b, sec)
-	return enc32(b, nsec)
+	sec := uint64(t.Unix()) * uint64(time.Second)
+	sec += uint64(t.Nanosecond())
+	return enc64(b, sec)
 }
 
 func dectime(b []byte) ([]byte, time.Time) {
-	var sec int64
-	var nsec uint32
-	b, sec = dec64[int64](b)
-	b, nsec = dec32[uint32](b)
+	var val uint64
+	b, val = dec64[uint64](b)
 
-	return b, time.Unix(sec, int64(nsec))
+	ns := val % uint64(time.Second)
+	s := val / uint64(time.Second)
+	return b, time.Unix(int64(s), int64(ns))
 }
 
 var (

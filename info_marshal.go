@@ -16,18 +16,28 @@ package fio
 import (
 	"fmt"
 	"io/fs"
+	"path/filepath"
+)
+
+type MarshalFlag uint32
+
+const (
+	JunkPath MarshalFlag = 1 << iota
 )
 
 // MarshalSize returns the marshaled size of _this_
 // instance of Info
-func (ii *Info) MarshalSize() int {
-	n := len(ii.Nam) + 4 // name + length
+func (ii *Info) MarshalSize(flag MarshalFlag) int {
+	n := _FixedEncodingSize
+
+	switch {
+	case flag&JunkPath > 0:
+		n += len(filepath.Base(ii.Nam)) + 4 // name + length
+
+	default:
+		n += len(ii.Nam) + 4 // name + length
+	}
 	n += xattrlen(ii.Xattr)
-
-	n += (3 * 12) // 3 time fields
-
-	// rest of fixed width types
-	n += (4 * 4) + (4 * 8)
 
 	return n + 4
 }
@@ -36,8 +46,8 @@ func (ii *Info) MarshalSize() int {
 // The buffer 'b' is expected to be sufficiently big to hold the
 // marshaled data. It returns the number of marshaled bytes
 // (ie exactly the value returned by the corresponding MarshalSize()).
-func (ii *Info) MarshalTo(b []byte) (int, error) {
-	sz := ii.MarshalSize()
+func (ii *Info) MarshalTo(b []byte, flag MarshalFlag) (int, error) {
+	sz := ii.MarshalSize(flag)
 	if len(b) < sz {
 		return 0, fmt.Errorf("marshal: buf: %w", ErrTooSmall)
 	}
@@ -63,15 +73,22 @@ func (ii *Info) MarshalTo(b []byte) (int, error) {
 	b = enctime(b, ii.Mtim)
 	b = enctime(b, ii.Ctim)
 
-	b = encstr(b, ii.Nam)
+	switch {
+	case flag&JunkPath > 0:
+		b = encstr(b, filepath.Base(ii.Nam))
+
+	default:
+		b = encstr(b, ii.Nam)
+	}
+
 	b = encxattr(b, ii.Xattr)
 	return sz, nil
 }
 
 // Marshal marshals 'ii' into a correctly sized buffer and returns it
-func (ii *Info) Marshal() ([]byte, error) {
-	b := make([]byte, ii.MarshalSize())
-	_, err := ii.MarshalTo(b)
+func (ii *Info) Marshal(flag MarshalFlag) ([]byte, error) {
+	b := make([]byte, ii.MarshalSize(flag))
+	_, err := ii.MarshalTo(b, flag)
 	if err != nil {
 		return nil, err
 	}
@@ -165,23 +182,24 @@ func encxattr(b []byte, x Xattr) []byte {
 
 func decxattr(b []byte) ([]byte, Xattr, error) {
 	if len(b) < 4 {
-		return nil, nil, ErrTooSmall
+		return nil, nil, fmt.Errorf("unmarshal: xattr: buf len %d: %w", len(b), ErrTooSmall)
 	}
 
 	var z int
 
 	b, z = dec32[int](b)
 	if len(b) < z {
-		return nil, nil, ErrTooSmall
+		return nil, nil, fmt.Errorf("unmarshal: xattr: buf len %d, want %d: %w", len(b), z, ErrTooSmall)
 	}
 
 	ret := b[z:]
 	x := make(Xattr)
+	j := 0
 	for z > 0 {
 		var kl, vl int
 
 		if len(b) < 8 {
-			return nil, nil, ErrTooSmall
+			return nil, nil, fmt.Errorf("unmarshal: xattr: %d: buf len %d, want 8: %w", j, len(b), ErrTooSmall)
 		}
 
 		b, kl = dec32[int](b)
@@ -189,20 +207,21 @@ func decxattr(b []byte) ([]byte, Xattr, error) {
 		z -= 8
 
 		if len(b) < kl {
-			return nil, nil, ErrTooSmall
+			return nil, nil, fmt.Errorf("unmarshal: xattr: key %d: buf len %d, want %d: %w", j, len(b), kl, ErrTooSmall)
 		}
 		k := string(b[:kl])
 		b = b[kl:]
 		z -= kl
 
 		if len(b) < vl {
-			return nil, nil, ErrTooSmall
+			return nil, nil, fmt.Errorf("unmarshal: xattr: key %d: buf len %d, want %d: %w", j, len(b), vl, ErrTooSmall)
 		}
 		v := string(b[:vl])
 		b = b[vl:]
 		z -= vl
 
 		x[k] = v
+		j++
 	}
 
 	return ret, x, nil

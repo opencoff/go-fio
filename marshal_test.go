@@ -31,9 +31,9 @@ func TestMarshal(t *testing.T) {
 	assert(ii != nil, "randinfo is nil")
 
 	enc := make([]byte, 4096)
-	z, err := ii.MarshalTo(enc)
+	z, err := ii.MarshalTo(enc, 0)
 	assert(err == nil, "marshal: err %s", err)
-	assert(z == ii.MarshalSize(), "marshal: sz: exp %d, saw %d", ii.MarshalSize(), z)
+	assert(z == ii.MarshalSize(0), "marshal: sz: exp %d, saw %d", ii.MarshalSize(0), z)
 
 	var di Info
 
@@ -52,11 +52,11 @@ func TestMarshalMany(t *testing.T) {
 
 	for i := 0; i < n; i++ {
 		ii := randInfo()
-		want := ii.MarshalSize()
+		want := ii.MarshalSize(0)
 		assert(want < len(buf), "marshal: buf too small; have %d, want %d", len(buf), want)
-		z, err := ii.MarshalTo(buf)
+		z, err := ii.MarshalTo(buf, 0)
 		assert(err == nil, "marshal: err %s", err)
-		assert(z == ii.MarshalSize(), "marshal: sz: exp %d, saw %d", ii.MarshalSize(), z)
+		assert(z == ii.MarshalSize(0), "marshal: sz: exp %d, saw %d", ii.MarshalSize(0), z)
 
 		var di Info
 
@@ -74,12 +74,12 @@ func TestMarshalErrors(t *testing.T) {
 	buf := make([]byte, 4096)
 
 	ii := randInfo()
-	z, err := ii.MarshalTo(buf[:128])
+	z, err := ii.MarshalTo(buf[:128], 0)
 	assert(err != nil, "marshal: encoded to small buf: %d bytes", z)
 
-	z, err = ii.MarshalTo(buf)
+	z, err = ii.MarshalTo(buf, 0)
 	assert(err == nil, "marshal: %s", err)
-	assert(z == ii.MarshalSize(), "marshal: sz exp %d, saw %d", z, ii.MarshalSize())
+	assert(z == ii.MarshalSize(0), "marshal: sz exp %d, saw %d", z, ii.MarshalSize(0))
 
 	var di Info
 	m, err := di.Unmarshal(buf[:z/2])
@@ -107,7 +107,7 @@ func BenchmarkMarshalUnmarshal(b *testing.B) {
 		st, err := Lstat(nm)
 		assert(err == nil, "%s: stat: %s", nm, err)
 		fis[i] = st
-		bsz += st.MarshalSize()
+		bsz += st.MarshalSize(0)
 	}
 
 	b.Logf("Readdir %s: %d entries\n", cwd, len(dirents))
@@ -121,7 +121,7 @@ func BenchmarkMarshalUnmarshal(b *testing.B) {
 			b := ebuf
 			for i := range fis {
 				st := fis[i]
-				n, err := st.MarshalTo(b)
+				n, err := st.MarshalTo(b, 0)
 				assert(err == nil, "%s: marshal: %s", st.Name(), err)
 				b = b[n:]
 			}
