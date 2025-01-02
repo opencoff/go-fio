@@ -18,6 +18,7 @@ import (
 	"io/fs"
 	"math/rand/v2"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -122,7 +123,7 @@ func BenchmarkMarshalUnmarshal(b *testing.B) {
 			for i := range fis {
 				st := fis[i]
 				n, err := st.MarshalTo(b, 0)
-				assert(err == nil, "%s: marshal: %s", st.Name(), err)
+				assert(err == nil, "%s: marshal: %s", st.Path(), err)
 				b = b[n:]
 			}
 			assert(len(b) == 0, "marshal: %d bytes leftover", len(b))
@@ -139,10 +140,10 @@ func BenchmarkMarshalUnmarshal(b *testing.B) {
 			for i := range fis {
 				st := fis[i]
 				n, err := di.Unmarshal(b)
-				assert(err == nil, "%s: unmarshal: %s", st.Name(), err)
+				assert(err == nil, "%s: unmarshal: %s", st.Path(), err)
 
 				err = infoEqual(st, &di)
-				assert(err == nil, "%s: %s", st.Name(), err)
+				assert(err == nil, "%s: %s", st.Path(), err)
 				b = b[n:]
 			}
 			assert(len(b) == 0, "unmarshal: %d bytes leftover", len(b))
@@ -151,8 +152,8 @@ func BenchmarkMarshalUnmarshal(b *testing.B) {
 }
 
 func infoEqual(a, b *Info) error {
-	if a.Nam != b.Nam {
-		return fmt.Errorf("name: exp %s, saw %s", a.Nam, b.Nam)
+	if a.Path() != b.Path() {
+		return fmt.Errorf("name: exp %s, saw %s", a.path, b.path)
 	}
 	if a.Ino != b.Ino {
 		return fmt.Errorf("ino: exp %d, saw %d", a.Ino, b.Ino)
@@ -226,7 +227,7 @@ func randInfo() *Info {
 		Mtim: randtime(),
 		Ctim: randtime(),
 
-		Nam:   randstr(64),
+		path:  randpath(5),
 		Xattr: randxattr(rand.IntN(8) + 1),
 	}
 
@@ -258,7 +259,7 @@ func randtime() time.Time {
 	return now.Add(-r)
 }
 
-const ascii string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ/.0123456789"
+const ascii string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.0123456789"
 
 func randstr(m int) string {
 	const n = len(ascii)
@@ -270,4 +271,14 @@ func randstr(m int) string {
 		w.WriteRune(rune(ascii[i]))
 	}
 	return w.String()
+}
+
+func randpath(n int) string {
+	v := make([]string, 0, n)
+	for n > 0 {
+		n -= 1
+		z := rand.IntN(20) + 1
+		v = append(v, randstr(z))
+	}
+	return filepath.Join(v...)
 }

@@ -202,7 +202,7 @@ func newWalk(tx *test) (map[string]fs.FileInfo, error) {
 	}()
 
 	for o := range och {
-		res[o.Name()] = o
+		res[o.Path()] = o
 	}
 
 	wg.Wait()

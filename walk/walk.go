@@ -359,7 +359,6 @@ func (d *walkState) worker() {
 
 // output action for entries we encounter
 func (d *walkState) output(fi *fio.Info) {
-	//fmt.Printf("out: %s\n", fi.Name())
 	m := fi.Mode()
 
 	// we have to special case regular files because there is
@@ -367,6 +366,7 @@ func (d *walkState) output(fi *fio.Info) {
 	//
 	// For everyone else, we can consult the typ map
 	if (d.typ&m) > 0 || ((d.Type&FILE) > 0 && m.IsRegular()) {
+		//fmt.Printf("out: %s\n", fi.Path())
 		d.apply(fi)
 	}
 }
@@ -499,7 +499,7 @@ func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
 	}
 
 	// process symlinks until we are done
-	nm := fi.Name()
+	nm := fi.Path()
 	newnm, err := filepath.EvalSymlinks(nm)
 	if err != nil {
 		d.error(&Error{"symlink", nm, err})

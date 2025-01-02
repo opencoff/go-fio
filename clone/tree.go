@@ -252,8 +252,8 @@ func (cc *dircloner) clone() error {
 	wg.Add(1)
 	go func() {
 		cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
-			wp.Submit(&delOp{fi.Name()})
-			cc.o.Delete(fi.Name())
+			wp.Submit(&delOp{fi.Path()})
+			cc.o.Delete(fi.Path())
 			return true
 		})
 		wg.Done()
@@ -262,8 +262,8 @@ func (cc *dircloner) clone() error {
 	wg.Add(1)
 	go func() {
 		cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
-			wp.Submit(&delOp{fi.Name()})
-			cc.o.Delete(fi.Name())
+			wp.Submit(&delOp{fi.Path()})
+			cc.o.Delete(fi.Path())
 			return true
 		})
 		wg.Done()
@@ -273,8 +273,8 @@ func (cc *dircloner) clone() error {
 	wg.Add(1)
 	go func() {
 		cc.Diff.Range(func(_ string, p fio.Pair) bool {
-			src := p.Src.Name()
-			dst := p.Dst.Name()
+			src := p.Src.Path()
+			dst := p.Dst.Path()
 
 			if linked := cc.h.track(p.Src, dst); !linked {
 				wp.Submit(&copyOp{src, dst})

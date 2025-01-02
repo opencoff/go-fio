@@ -369,7 +369,7 @@ func walkTree(nm string, wo walk.Options) (*fio.FioMap, error) {
 	tree := fio.NewFioMap()
 
 	err := walk.WalkFunc([]string{nm}, wo, func(fi *fio.Info) error {
-		rel, _ := filepath.Rel(nm, fi.Name())
+		rel, _ := filepath.Rel(nm, fi.Path())
 		if rel != "." {
 			tree.Store(rel, fi)
 		}

@@ -16,6 +16,7 @@ package fio
 import (
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -40,7 +41,8 @@ type Info struct {
 	Mtim time.Time
 	Ctim time.Time
 
-	Nam   string
+	path  string
+	nm    string
 	Xattr Xattr
 }
 
@@ -107,16 +109,47 @@ func Lstatm(nm string, fi *Info) error {
 	return nil
 }
 
+// CopyTo does a deep-copy of the contents of ii to dest.
+func (ii *Info) CopyTo(dest *Info) {
+	old := dest.Xattr
+	*dest = *ii
+	if old == nil {
+		old = make(Xattr)
+	}
+
+	// if there was an existing map in dest, we've saved it.
+	// Else, we've created a new one. In either case, we
+	// can now copy over the xattrs to this.
+	for k, v := range ii.Xattr {
+		old[k] = v
+	}
+	dest.Xattr = old
+}
+
+// Clone makes a deep copy of ii and returns the new
+// instance
+func (ii *Info) Clone() *Info {
+	jj := new(Info)
+	ii.CopyTo(jj)
+	return jj
+}
+
 // String is a string representation of Info
 func (ii *Info) String() string {
 	return fmt.Sprintf("%s: %d %d; %s; %s", ii.Name(), ii.Siz, ii.Nlink, ii.ModTime(), ii.Mode().String())
 }
 
+// Path returns the relative path of this file ("relative" to current working dir
+// of the calling process).
+func (ii *Info) Path() string {
+	return ii.path
+}
+
 // fs.FileInfo methods of Info
 
-// Name satisfies fs.FileInfo and returns the name of the fs entry.
+// Name satisfies fs.FileInfo and returns the basename of the fs entry.
 func (ii *Info) Name() string {
-	return ii.Nam
+	return filepath.Base(ii.path)
 }
 
 // Size returns the fs entry's size

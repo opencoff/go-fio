@@ -23,7 +23,7 @@ import (
 
 func mknod(dst string, fi *fio.Info) error {
 	if err := syscall.Mknod(dst, uint32(fi.Mode()), fi.Dev); err != nil {
-		return &Error{"mknod", fi.Name(), dst, err}
+		return &Error{"mknod", fi.Path(), dst, err}
 	}
 	return nil
 }

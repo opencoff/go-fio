@@ -36,7 +36,7 @@ func makeInfo(fi *Info, nm string, st *syscall.Stat_t, x Xattr) {
 		Mtim: ts2time(st.Mtimespec),
 		Ctim: ts2time(st.Ctimespec),
 
-		Nam:   nm,
+		path:  nm,
 		Xattr: x,
 	}
 

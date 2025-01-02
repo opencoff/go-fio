@@ -23,7 +23,7 @@ import (
 )
 
 func clonetimes(dst string, fi *fio.Info) error {
-	return &Error{"clonetimes", fi.Name(), dst, err}
+	return &Error{"clonetimes", fi.Path(), dst, err}
 }
 
 func mknod(dst string, src string, fi *fio.Info) error {

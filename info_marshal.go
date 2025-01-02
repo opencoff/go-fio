@@ -32,10 +32,10 @@ func (ii *Info) MarshalSize(flag MarshalFlag) int {
 
 	switch {
 	case flag&JunkPath > 0:
-		n += len(filepath.Base(ii.Nam)) + 4 // name + length
+		n += len(filepath.Base(ii.path)) + 4 // name + length
 
 	default:
-		n += len(ii.Nam) + 4 // name + length
+		n += len(ii.path) + 4 // name + length
 	}
 	n += xattrlen(ii.Xattr)
 
@@ -75,10 +75,10 @@ func (ii *Info) MarshalTo(b []byte, flag MarshalFlag) (int, error) {
 
 	switch {
 	case flag&JunkPath > 0:
-		b = encstr(b, filepath.Base(ii.Nam))
+		b = encstr(b, filepath.Base(ii.path))
 
 	default:
-		b = encstr(b, ii.Nam)
+		b = encstr(b, ii.path)
 	}
 
 	b = encxattr(b, ii.Xattr)
@@ -133,7 +133,7 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 
 	var err error
 
-	b, ii.Nam, err = decstr(b)
+	b, ii.path, err = decstr(b)
 	if err != nil {
 		return 0, err
 	}

@@ -132,21 +132,21 @@ var mdUpdaters = []cloner{
 
 func clonexattr(dst string, fi *fio.Info) error {
 	if err := fio.LreplaceXattr(dst, fi.Xattr); err != nil {
-		return &Error{"replace-xattr", fi.Name(), dst, err}
+		return &Error{"replace-xattr", fi.Path(), dst, err}
 	}
 	return nil
 }
 
 func cloneugid(dst string, fi *fio.Info) error {
 	if err := os.Lchown(dst, int(fi.Uid), int(fi.Gid)); err != nil {
-		return &Error{"lchown", fi.Name(), dst, err}
+		return &Error{"lchown", fi.Path(), dst, err}
 	}
 	return nil
 }
 
 func clonemode(dst string, fi *fio.Info) error {
 	if err := os.Chmod(dst, fi.Mode()); err != nil {
-		return &Error{"chmod", fi.Name(), dst, err}
+		return &Error{"chmod", fi.Path(), dst, err}
 	}
 	return nil
 }
@@ -154,7 +154,7 @@ func clonemode(dst string, fi *fio.Info) error {
 func updateMeta(dst string, fi *fio.Info) error {
 	for _, fp := range mdUpdaters {
 		if err := fp(dst, fi); err != nil {
-			return &Error{"md-update", fi.Name(), dst, err}
+			return &Error{"md-update", fi.Path(), dst, err}
 		}
 	}
 	return nil
