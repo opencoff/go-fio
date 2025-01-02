@@ -42,7 +42,6 @@ type Info struct {
 	Ctim time.Time
 
 	path  string
-	nm    string
 	Xattr Xattr
 }
 
@@ -143,6 +142,11 @@ func (ii *Info) String() string {
 // of the calling process).
 func (ii *Info) Path() string {
 	return ii.path
+}
+
+// SetPath sets the path to 'p'
+func (ii *Info) SetPath(p string) {
+	ii.path = p
 }
 
 // fs.FileInfo methods of Info
