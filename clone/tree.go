@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/opencoff/go-fio"
@@ -344,30 +345,15 @@ func (cc *dircloner) clone() error {
 // fixup dst dirs - esp their mtimes; the files would've been written in
 // random order
 func (cc *dircloner) fixup(dmap map[string]bool) error {
-	// clone dir metadata of modified dirs
-	wp := fio.NewWorkPool[mdOp](cc.Concurrency, func(_ int, w mdOp) error {
-		if err := UpdateMetadata(w.dst, w.src); err != nil {
-			if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
-				return nil
-			}
-			return err
-		}
-		return nil
-	})
-
 	// reverse sort the list of dirs so we touch the deepest
 	// part of the tree first.
 	dlist := _Keys(dmap)
 	slices.SortFunc(dlist, func(a, b string) int {
-		if b < a {
-			return -1
-		}
-		if b > a {
-			return +1
-		}
-		return 0
+		return strings.Compare(b, a)
 	})
 
+	// *Sequentially* Apply the MD updates - to ensure we cover all
+	// child MD updates before updating the parent.
 	var errs []error
 	for _, p := range dlist {
 		nm, _ := filepath.Rel(cc.Dst, p)
@@ -375,19 +361,23 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 			continue
 		}
 
+		// We have to use the latest timestamp rather than the
+		// one we have in cc.Difference.Lhs.
 		src := filepath.Join(cc.Src, nm)
 		fi, err := fio.Lstat(src)
 		if err != nil {
 			errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
 			continue
 		}
-		wp.Submit(mdOp{fi, p})
+
+		if err := updateMeta(p, fi); err != nil {
+			errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
+			continue
+		}
 		cc.o.MetadataUpdate(p, src)
 	}
 
-	wp.Close()
-	if err := wp.Wait(); err != nil {
-		errs = append(errs, err)
+	if len(errs) > 0 {
 		return &Error{"fixup", cc.Src, cc.Dst, errors.Join(errs...)}
 	}
 	return nil
