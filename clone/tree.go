@@ -265,6 +265,7 @@ func (cc *dircloner) clone() error {
 		cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
 			wp.Submit(&delOp{fi.Path()})
 			cc.o.Delete(fi.Path())
+			fmt.Printf("del %s\n", fi.Path())
 			return true
 		})
 		wg.Done()
@@ -366,7 +367,9 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 		src := filepath.Join(cc.Src, nm)
 		fi, err := fio.Lstat(src)
 		if err != nil {
-			errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
+			if !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
+			}
 			continue
 		}
 
@@ -409,7 +412,7 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return dirs, &Error{"rm", cc.Src, cc.Dst, err}
 		}
-		track(z.name)
+		track(filepath.Dir(z.name))
 
 	case *linkOp:
 		_ = os.Remove(z.dst) // XXX There is no way to overwrite?

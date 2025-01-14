@@ -33,7 +33,7 @@ func (t *syncCmd) Run(env *TestEnv, args []string) error {
 	now := env.Start
 	err := walk.WalkFunc(dirs, wo, func(fi *fio.Info) error {
 		if fi.Mode().Type() != fs.ModeSymlink {
-			err := os.Chtimes(fi.Name(), now, now)
+			err := os.Chtimes(fi.Path(), now, now)
 			if err != nil {
 				return fmt.Errorf("adjtime: %w", err)
 			}
@@ -48,7 +48,7 @@ func (t *syncCmd) Run(env *TestEnv, args []string) error {
 	// now fixup the entries for dirs
 	wo.Type = walk.DIR
 	err = walk.WalkFunc(dirs, wo, func(fi *fio.Info) error {
-		err := os.Chtimes(fi.Name(), now, now)
+		err := os.Chtimes(fi.Path(), now, now)
 		if err != nil {
 			return fmt.Errorf("adjtime: %w", err)
 		}
