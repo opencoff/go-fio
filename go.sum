@@ -2,6 +2,8 @@ github.com/opencoff/go-logger v0.7.3 h1:UQMhKfeICaBsuWzyV/S+PBTssX0XFB9cVuknksxy
 github.com/opencoff/go-logger v0.7.3/go.mod h1:dhRnw/605cByI6vleNQFb81ADuw3DH390BtkHoGY/uo=
 github.com/opencoff/go-mmap v0.1.5 h1:RKPtevC4mOW5bi9skBPPo4nFTIH4lVWAL20Tff+FjLg=
 github.com/opencoff/go-mmap v0.1.5/go.mod h1:y/6Jk/tDUc00k3oSQpiJX++20Nw7xFSlc5kLkhGnRXw=
+github.com/opencoff/go-testrunner v0.1.0 h1:RDQBI0xTRgxexae/iOXn7UimS8nCYCuQ8KSI/B1dy0o=
+github.com/opencoff/go-testrunner v0.1.0/go.mod h1:O9GZCnQzrQ6BdGPBkzaVrpnZQwObThZBTotPqfiS3DA=
 github.com/opencoff/go-utils v1.0.2 h1:BANRL8ZxgHpuo8gQBAzT3M9Im3aNFhaWW28jhc86LNs=
 github.com/opencoff/go-utils v1.0.2/go.mod h1:eZkEVQVzNfuE8uGepyhscMsqcXq7liGbBHYYwgYaoy8=
 github.com/opencoff/pflag v1.0.7 h1:o5cQIuX75bDcdJ6AXl68gzpA72a3CJ2MPStaMnEuwi4=
