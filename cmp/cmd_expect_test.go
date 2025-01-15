@@ -1,27 +1,24 @@
 // cmd_expect.go -- implements the "expect" command
 
-package main
+package cmp_test
 
 import (
 	"fmt"
 
 	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
+	tr "github.com/opencoff/go-testrunner"
 	"github.com/puzpuzpuz/xsync/v3"
 )
 
 type expectCmd struct {
 }
 
-func (t *expectCmd) New() Cmd {
-	return &expectCmd{}
-}
-
 func (t *expectCmd) Name() string {
 	return "expect"
 }
 
-func (t *expectCmd) Run(env *TestEnv, args []string) error {
+func (t *expectCmd) Run(env *tr.TestEnv, args []string) error {
 	exp := map[string][]string{
 		"ld":    {}, // left only dirs
 		"lf":    {}, // left only files
@@ -36,7 +33,7 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 	for i := range args {
 		arg := args[i]
 
-		key, vals, err := Split(arg)
+		key, vals, err := tr.Split(arg)
 		if err != nil {
 			return err
 		}
@@ -52,7 +49,7 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 	}
 
 	wo := walk.Options{
-		Concurrency: env.ncpu,
+		Concurrency: env.Ncpu,
 		Type:        walk.ALL,
 	}
 
@@ -62,7 +59,7 @@ func (t *expectCmd) Run(env *TestEnv, args []string) error {
 		return err
 	}
 
-	env.log.Debug(diff.String())
+	env.Log.Debug(diff.String())
 
 	for k, v := range exp {
 		switch k {
@@ -130,8 +127,8 @@ func match(key string, exp, have []string) error {
 	return nil
 }
 
-var _ Cmd = &expectCmd{}
+var _ tr.Cmd = &expectCmd{}
 
 func init() {
-	RegisterCommand(&expectCmd{})
+	tr.RegisterCommand(&expectCmd{})
 }
