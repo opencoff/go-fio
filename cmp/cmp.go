@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/opencoff/go-fio"
 	"github.com/opencoff/go-fio/walk"
@@ -271,14 +272,46 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 		fp(&option)
 	}
 
-	lhs, err := walkTree(src, option.Options)
-	if err != nil {
-		return nil, &Error{"walk-src", src, dst, err}
-	}
+	// We ought to do both of these in parallel
 
-	rhs, err := walkTree(dst, option.Options)
-	if err != nil {
-		return nil, &Error{"walk-dst", src, dst, err}
+	wo := option.Options
+
+	// since we're doing both walks in parallel, we ensure concurrency limits
+	// are honored
+	wo.Concurrency = wo.Concurrency / 2
+
+	var wg sync.WaitGroup
+	var err_L, err_R error
+	var lhs, rhs *fio.FioMap
+
+	wg.Add(2)
+
+	go func(w *sync.WaitGroup) {
+		var err error
+
+		lhs, err = walkTree(src, wo)
+		if err != nil {
+			err_L = &Error{"walk-src", src, dst, err}
+		}
+		w.Done()
+	}(&wg)
+
+	go func(w *sync.WaitGroup) {
+		var err error
+
+		rhs, err = walkTree(dst, wo)
+		if err != nil {
+			err_R = &Error{"walk-dst", src, dst, err}
+		}
+		w.Done()
+	}(&wg)
+
+	wg.Wait()
+	if err_L != nil {
+		return nil, err_L
+	}
+	if err_R != nil {
+		return nil, err_R
 	}
 
 	d := cmpInternal(lhs, rhs, &option)

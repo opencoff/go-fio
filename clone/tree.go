@@ -265,7 +265,6 @@ func (cc *dircloner) clone() error {
 		cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
 			wp.Submit(&delOp{fi.Path()})
 			cc.o.Delete(fi.Path())
-			fmt.Printf("del %s\n", fi.Path())
 			return true
 		})
 		wg.Done()

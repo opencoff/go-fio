@@ -455,7 +455,7 @@ func (d *walkState) walkPath(nm string) {
 
 		// don't process entries we've already seen
 		if d.isEntrySeen(fi) {
-			fmt.Printf("%s: +dup-inode\n", fp)
+			//fmt.Printf("%s: +dup-inode\n", fp)
 			continue
 		}
 

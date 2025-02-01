@@ -30,7 +30,7 @@ func TestTreeScript(t *testing.T) {
 	tmpdir := getTmpdir(t)
 
 	args := flag.Args()
-	fmt.Printf("args: %v\n", args)
+	//fmt.Printf("args: %v\n", args)
 
 	if len(args) == 0 {
 		av, err := readdir("./tests")
