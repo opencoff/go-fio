@@ -427,7 +427,7 @@ func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, erro
 }
 
 // take a list of paths and return only longest prefixes
-func dirlist(m *fio.FioMap) []string {
+func dirlist(m *fio.Map) []string {
 	if m.Size() == 0 {
 		return []string{}
 	}
@@ -482,7 +482,7 @@ type mdOp struct {
 	dst string
 }
 
-func newFunnyError(m *fio.FioPairMap) *FunnyError {
+func newFunnyError(m *fio.PairMap) *FunnyError {
 	var f []FunnyEntry
 
 	m.Range(func(nm string, p fio.Pair) bool {

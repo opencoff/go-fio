@@ -23,18 +23,20 @@ type Pair struct {
 	Src, Dst *Info
 }
 
-// FioMap is a concurrency safe map of relative path name and the
+// Map is a concurrency safe map of path name and the
 // corresponding Stat/Lstat info.
-type FioMap = xsync.MapOf[string, *Info]
+type Map = xsync.MapOf[string, *Info]
 
-// FioPairMap is a concurrency safe map of relative path name and the
+// PairMap is a concurrency safe map of path name and the
 // corresponding Stat/Lstat info of both the source and destination.
-type FioPairMap = xsync.MapOf[string, Pair]
+type PairMap = xsync.MapOf[string, Pair]
 
-func NewFioMap() *FioMap {
+// NewMap makes a new concurrent map of name to stat/lstat info
+func NewMap() *Map {
 	return xsync.NewMapOf[string, *Info]()
 }
 
-func NewFioPairMap() *FioPairMap {
+// NewPairMap makes a new concurrent map of name to a Pair
+func NewPairMap() *PairMap {
 	return xsync.NewMapOf[string, Pair]()
 }
