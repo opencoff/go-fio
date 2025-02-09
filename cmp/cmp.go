@@ -282,14 +282,21 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 
 	var wg sync.WaitGroup
 	var err_L, err_R error
-	var lhs, rhs *fio.Map
 
 	wg.Add(2)
 
-	go func(w *sync.WaitGroup) {
-		var err error
+	lhs := fio.NewMap()
+	rhs := fio.NewMap()
 
-		lhs, err = walkTree(src, wo)
+	go func(w *sync.WaitGroup) {
+		err := walk.WalkFunc([]string{src}, wo, func(fi *fio.Info) error {
+			rel, _ := filepath.Rel(src, fi.Path())
+			if rel != "." {
+				lhs.Store(rel, fi)
+				option.o.VisitSrc(fi)
+			}
+			return nil
+		})
 		if err != nil {
 			err_L = &Error{"walk-src", src, dst, err}
 		}
@@ -297,9 +304,14 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 	}(&wg)
 
 	go func(w *sync.WaitGroup) {
-		var err error
-
-		rhs, err = walkTree(dst, wo)
+		err := walk.WalkFunc([]string{dst}, wo, func(fi *fio.Info) error {
+			rel, _ := filepath.Rel(dst, fi.Path())
+			if rel != "." {
+				rhs.Store(rel, fi)
+				option.o.VisitDst(fi)
+			}
+			return nil
+		})
 		if err != nil {
 			err_R = &Error{"walk-dst", src, dst, err}
 		}
@@ -395,21 +407,6 @@ func newCmp(lhs, rhs *fio.Map, opt *cmpopt) *cmp {
 	}
 
 	return c
-}
-
-// walk the dir 'nm' and return the full fs tree
-func walkTree(nm string, wo walk.Options) (*fio.Map, error) {
-	tree := fio.NewMap()
-
-	err := walk.WalkFunc([]string{nm}, wo, func(fi *fio.Info) error {
-		rel, _ := filepath.Rel(nm, fi.Path())
-		if rel != "." {
-			tree.Store(rel, fi)
-		}
-		return nil
-	})
-
-	return tree, err
 }
 
 // diffType captures the specific difference between two
