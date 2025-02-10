@@ -50,8 +50,8 @@ type SafeFile struct {
 
 	// tracks the state of this file:
 	//  < 0 => aborted
-	//  > 0 => closed
 	//  = 0 => open and active
+	//  > 0 => closed
 	closed atomic.Int64
 }
 
@@ -173,16 +173,17 @@ func (sf *SafeFile) WriteAt(b []byte, off int64) (int, error) {
 // to call Close() on a different code path; the first call to Abort() or
 // Close() takes precedence.
 func (sf *SafeFile) Abort() {
-	n := sf.closed.Load()
-	if n < 0 || n > 0 {
-		return
+	if sf.closed.CompareAndSwap(0, -1) {
+		sf.cleanup()
 	}
 
-	sf.File.Close()
-	os.Remove(sf.Name())
-	sf.closed.Store(-1)
-
 	// we retain any previous error in sf.err
+}
+
+func (sf *SafeFile) cleanup() {
+	nm := sf.Name()
+	sf.File.Close()
+	os.Remove(nm)
 }
 
 // Close flushes all file data & metadata to disk, closes the file and atomically renames
@@ -193,17 +194,20 @@ func (sf *SafeFile) Close() error {
 		return sf.err
 	}
 
-	n := sf.closed.Load()
-	if n < 0 {
-		if sf.err != nil {
-			return sf.err
+	// if file already closed or aborted, nothing to do
+	if !sf.closed.CompareAndSwap(0, 1) {
+		if n := sf.closed.Load(); n < 0 {
+			if sf.err != nil {
+				return sf.err
+			}
+			return ErrAborted
 		}
-		return errAborted
-	}
-
-	if n > 0 {
 		return sf.err
 	}
+
+	// from this point on, we ought to remove old files
+	// on errors
+	defer sf.cleanup()
 
 	if sf.err = sf.Sync(); sf.err != nil {
 		return sf.err
@@ -217,8 +221,6 @@ func (sf *SafeFile) Close() error {
 	if sf.err = os.Rename(sf.Name(), sf.name); sf.err != nil {
 		return sf.err
 	}
-
-	sf.closed.Store(1)
 
 	return nil
 }
@@ -279,5 +281,5 @@ func xflag2str(flag int) string {
 }
 
 var (
-	errAborted = errors.New("safefile: aborted; file not committed")
+	ErrAborted = errors.New("safefile: aborted; file not committed")
 )

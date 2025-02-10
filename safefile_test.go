@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	mrand "math/rand/v2"
 	"os"
@@ -15,7 +16,7 @@ import (
 	"github.com/opencoff/go-mmap"
 )
 
-func TestSimpleFile(t *testing.T) {
+func TestSafeFileSimple(t *testing.T) {
 	assert := newAsserter(t)
 	tmpdir := getTmpdir(t)
 
@@ -41,13 +42,13 @@ func TestSimpleFile(t *testing.T) {
 	err = sf.Close()
 	assert(err == nil, "%s: close: %s", sf.Name(), err)
 
-	ck2 := sha256.Sum256(buf)
+	ck2 := cksum(buf)
 	ck3, err := fileCksum(fn)
 	assert(err == nil, "%s: cksum error: %s", fn, err)
-	assert(byteEq(ck2[:], ck3), "cksum mismatch: %s", fn)
+	assert(byteEq(ck2, ck3), "cksum mismatch: %s\nexp %x\nsaw %x", fn, ck2, ck3)
 }
 
-func TestAbort(t *testing.T) {
+func TestSafeFileAbort(t *testing.T) {
 	assert := newAsserter(t)
 	tmpdir := getTmpdir(t)
 
@@ -68,6 +69,8 @@ func TestAbort(t *testing.T) {
 	assert(n == len(buf), "%s: partial write: exp %d, saw %d", sf.Name(), len(buf), n)
 
 	sf.Abort()
+	err = sf.Close()
+	assert(errors.Is(err, ErrAborted), "%s: abort+close: exp nil, saw %s", err)
 
 	// File original contents shouldn't change
 	ck3, err := fileCksum(fn)
@@ -77,6 +80,12 @@ func TestAbort(t *testing.T) {
 
 func byteEq(a, b []byte) bool {
 	return 1 == subtle.ConstantTimeCompare(a, b)
+}
+
+func cksum(b []byte) []byte {
+	h := sha256.New()
+	h.Write(b)
+	return h.Sum(nil)[:]
 }
 
 func fileCksum(nm string) ([]byte, error) {
