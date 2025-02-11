@@ -9,6 +9,6 @@ mkfile -t lhs a/d/0
 mkfile -d -t rhs a/d/0
 
 # sync all time stamps
-sync
+touch
 
 expect cd="a a/b a/c a/d" cf="a/b/0 a/c/0" funny="a/d/0"

@@ -2,6 +2,6 @@
 
 mkfile -t lhs a/0 a/1 b/1 c/2
 
-sync
+touch
 
 expect ld="a b c" lf="a/0 a/1 b/1 c/2"

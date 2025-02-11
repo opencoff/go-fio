@@ -7,6 +7,6 @@ mkfile -t both a/b/0
 mkfile -t lhs a/d/1
 mkfile -t rhs a/f/1
 
-sync
+touch
 
 expect cd="a a/b" cf="a/b/0" ld="a/d" lf="a/d/1" rd="a/f" rf="a/f/1"

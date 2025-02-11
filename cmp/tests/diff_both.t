@@ -3,7 +3,7 @@
 # make some common files
 mkfile -t both a/b/0 a/b/1 a/c/0 a/c/1
 
-sync
+touch
 
 # modify one file on each side
 mutate lhs="a/c/0" rhs="a/c/1"

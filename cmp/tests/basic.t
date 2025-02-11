@@ -4,7 +4,7 @@
 mkfile -d -t both a b c
 
 # sync time stamps
-sync
+touch
 
 # do the sync; there should be no diffs
 expect cd="a b c"
