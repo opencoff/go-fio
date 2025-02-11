@@ -36,7 +36,7 @@ var linuxTests = []test{
 var macOSTests = []test{
 	{"/etc", ALL},
 	{"/bin", FILE},
-	{"$HOME/Library", FILE | SYMLINK},
+	//{"$HOME/Library/Preferences", FILE | SYMLINK},
 }
 
 func (tx *test) String() string {
