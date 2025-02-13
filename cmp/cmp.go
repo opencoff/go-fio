@@ -226,7 +226,7 @@ func (d *Difference) String() string {
 		})
 	}
 
-	fmt.Fprintf(&b, "---Diff Output---\nSrc: %s\nDst: %s\n", d.Src, d.Dst)
+	fmt.Fprintf(&b, "---BEGIN DIFFERENCE---\nSrc: %s\nDst: %s\n", d.Src, d.Dst)
 
 	d1("Left-only dirs", d.LeftDirs)
 	d1("Left-only files", d.LeftFiles)
@@ -239,7 +239,7 @@ func (d *Difference) String() string {
 	d2("Funny files", d.Funny)
 	d2("Differences", d.Diff)
 
-	b.WriteString("---End Diff Output---\n")
+	b.WriteString("---END DIFFERENCE---\n")
 	return b.String()
 }
 

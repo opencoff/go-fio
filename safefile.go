@@ -109,6 +109,11 @@ func (sf *SafeFile) isOpen() bool {
 	return false
 }
 
+// RealName returns the actual name of the final file
+func (sf *SafeFile) RealName() string {
+	return sf.name
+}
+
 var flag2str = []struct {
 	flag int
 	name string
