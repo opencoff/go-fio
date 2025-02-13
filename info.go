@@ -135,7 +135,7 @@ func (ii *Info) Clone() *Info {
 
 // String is a string representation of Info
 func (ii *Info) String() string {
-	return fmt.Sprintf("%s: %d %d; %s; %s", ii.Name(), ii.Siz, ii.Nlink, ii.ModTime(), ii.Mode().String())
+	return fmt.Sprintf("%s: %d %d; %s; %s", ii.Name(), ii.Siz, ii.Nlink, ii.ModTime().UTC(), ii.Mode().String())
 }
 
 // Path returns the relative path of this file ("relative" to current working dir
