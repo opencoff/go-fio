@@ -6,7 +6,7 @@ go 1.23.4
 
 require (
 	github.com/opencoff/go-mmap v0.1.5
-	github.com/opencoff/go-testrunner v0.1.1
+	github.com/opencoff/go-testrunner v0.1.2
 	github.com/pkg/xattr v0.4.10
 	github.com/puzpuzpuz/xsync/v3 v3.5.0
 	golang.org/x/sys v0.29.0
