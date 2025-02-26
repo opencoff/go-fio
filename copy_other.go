@@ -16,9 +16,14 @@
 package fio
 
 import (
+	"io/fs"
 	"os"
 )
 
-func sys_copyFile(dst, src *os.File) error {
+func sysCopyFile(dst, src string, perm fs.FileMode) error {
+	return slowCopy(dst, src, perm)
+}
+
+func sysCopyFd(dst, src *os.File) error {
 	return copyViaMmap(dst, src)
 }

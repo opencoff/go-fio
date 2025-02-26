@@ -16,20 +16,30 @@
 package fio
 
 import (
+	"io/fs"
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
 
-// macOS 10.12+ have clonefile(2)
-func sys_copyFile(dst, src *os.File) error {
-	d := dst.Name()
-	s := src.Name()
-
-	err := unix.Clonefile(s, d, unix.CLONE_NOFOLLOW)
+func sysCopyFile(dst, src string, perm fs.FileMode) error {
+	err := unix.Clonefile(src, dst, unix.CLONE_NOFOLLOW)
 	if err == nil {
 		return nil
 	}
 
-	return copyViaMmap(dst, src)
+	if !errAny(err, syscall.ENOTSUP, syscall.ENOSYS) {
+		return &CopyError{"clone", src, dst, err}
+	}
+
+	// fallback
+	return slowCopy(dst, src, perm)
+}
+
+// macOS doesn't have the equiv fclonefile() that takes two fds.
+// And clonefile(2) and fclonefileat(2) both require that the
+// destination file NOT exist. So, we are stuck with slow path
+func sysCopyFd(d, s *os.File) error {
+	return copyViaMmap(d, s)
 }

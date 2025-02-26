@@ -14,6 +14,7 @@
 package fio
 
 import (
+	"io/fs"
 	"os"
 
 	"github.com/opencoff/go-mmap"
@@ -32,5 +33,42 @@ func copyViaMmap(dst, src *os.File) error {
 	if err != nil {
 		return &CopyError{"seek-mmap", src.Name(), dst.Name(), err}
 	}
+
+	if err = dst.Sync(); err != nil {
+		return &CopyError{"dst-sync", src.Name(), dst.Name(), err}
+	}
+	return nil
+}
+
+// slowCopy copies src to dst via mmap
+func slowCopy(dst, src string, perm fs.FileMode) error {
+	// never overwrite an existing file.
+	_, err := Stat(dst)
+	if err == nil {
+		return &CopyError{"stat-dst", src, dst, err}
+	}
+
+	s, err := os.Open(src)
+	if err != nil {
+		return &CopyError{"open-src", src, dst, err}
+	}
+
+	defer s.Close()
+
+	d, err := NewSafeFile(dst, OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
+	if err != nil {
+		return &CopyError{"safefile", src, dst, err}
+	}
+
+	defer d.Abort()
+
+	if err = copyViaMmap(d.File, s); err != nil {
+		return err
+	}
+
+	if err = d.Close(); err != nil {
+		return &CopyError{"close", src, dst, err}
+	}
+
 	return nil
 }

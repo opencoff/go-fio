@@ -14,8 +14,20 @@
 package fio
 
 import (
+	"errors"
 	"fmt"
 )
+
+// errAny returns true if the target error 'err' matches
+// any in the list 'errs'; and returns false otherwise
+func errAny(err error, errs ...error) bool {
+	for _, e := range errs {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}
 
 // CopyError represents the errors returned by
 // CopyFile and CopyFd

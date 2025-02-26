@@ -16,6 +16,7 @@ package fio
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -91,7 +92,7 @@ func Lstat(nm string) (*Info, error) {
 	return &ii, nil
 }
 
-// Lstatm is like Lstat except it uses the caller's
+// Lstatm is like Lstat except it uses the caller
 // supplied memory.
 func Lstatm(nm string, fi *Info) error {
 	var st syscall.Stat_t
@@ -106,6 +107,20 @@ func Lstatm(nm string, fi *Info) error {
 
 	makeInfo(fi, nm, &st, x)
 	return nil
+}
+
+// Fstat is like os.File.Stat() but also returns xattr
+func Fstat(fd *os.File) (*Info, error) {
+	var ii Info
+	if err := Fstatm(fd, &ii); err != nil {
+		return nil, err
+	}
+	return &ii, nil
+}
+
+// Fstatm is like Fstat except it uses caller supplied memory
+func Fstatm(fd *os.File, fi *Info) error {
+	return Lstatm(fd.Name(), fi)
 }
 
 // CopyTo does a deep-copy of the contents of ii to dest.
