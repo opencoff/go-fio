@@ -23,6 +23,9 @@ type MarshalFlag uint32
 
 const (
 	JunkPath MarshalFlag = 1 << iota
+
+	// incrememnt this when we change our encoding format
+	marshalVersion byte = 1
 )
 
 // MarshalSize returns the marshaled size of _this_
@@ -39,7 +42,7 @@ func (ii *Info) MarshalSize(flag MarshalFlag) int {
 	}
 	n += xattrlen(ii.Xattr)
 
-	return n + 4
+	return 1 + n + 4
 }
 
 // MarshalTo marshals 'ii' into the provided buffer 'b'.
@@ -59,6 +62,7 @@ func (ii *Info) MarshalTo(b []byte, flag MarshalFlag) (int, error) {
 	// length of actual marshaled bytes.
 	b = enc32(b, sz-4)
 
+	b[0], b = marshalVersion, b[1:]
 	b = enc64(b, ii.Ino)
 	b = enc64(b, ii.Siz)
 	b = enc64(b, ii.Dev)
@@ -115,6 +119,18 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 	// let compiler know we are sized correctly
 	_ = b[z-1]
 
+	var ver byte
+
+	ver, b = b[0], b[1:]
+
+	switch ver {
+	case 1:
+		return ii.unmarshalV1(b, z)
+	}
+	return 0, fmt.Errorf("unmarshal: unsupported version %d", ver)
+}
+
+func (ii *Info) unmarshalV1(b []byte, z int) (int, error) {
 	b, ii.Ino = dec64[uint64](b)
 	b, ii.Siz = dec64[int64](b)
 	b, ii.Dev = dec64[uint64](b)

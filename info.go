@@ -48,10 +48,11 @@ type Info struct {
 
 const (
 	// The encoded size of the fixed-width elements of Info
+	// 1b for marhsal version
 	// 8b for each time field x 3
-	// 4b  for each of uint32 x 3
-	// 8b  for each uint64 x 4
-	_FixedEncodingSize int = (3 * 8) + (4 * 4) + (4 * 8)
+	// 4b for each of uint32 x 3
+	// 8b for each uint64 x 4
+	_FixedEncodingSize int = 1 + (3 * 8) + (4 * 4) + (4 * 8)
 )
 
 var _ fs.FileInfo = &Info{}

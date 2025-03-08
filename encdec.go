@@ -87,12 +87,13 @@ func decstr(b []byte) ([]byte, string, error) {
 }
 
 // we represent time as a single uint64 in units of nanoseconds since
-// the start of Unix time. This means, our representation doesn't capture values
-// before Jan 1 1970 :-)
+// the start of Unix time. This gives us reliable high precision time
+// encoding for 584 years. This also means, we won't represent time values
+// before Jan 1 1970.
 func enctime(b []byte, t time.Time) []byte {
-	sec := uint64(t.Unix()) * uint64(time.Second)
-	sec += uint64(t.Nanosecond())
-	return enc64(b, sec)
+	ns := uint64(t.Unix()) * uint64(time.Second)
+	ns += uint64(t.Nanosecond())
+	return enc64(b, ns)
 }
 
 func dectime(b []byte) ([]byte, time.Time) {
