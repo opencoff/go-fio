@@ -29,18 +29,17 @@ const _ioChunkSize int = 256 * 1024
 
 // optimized copy for linux and safe fallback to mmap
 func sysCopyFile(dst, src string, perm fs.FileMode) error {
-	// never overwrite an existing file.
-	si, err := Stat(dst)
-	if err == nil {
-		return &CopyError{"stat-dst", src, dst, err}
-	}
-
 	s, err := os.Open(src)
 	if err != nil {
 		return &CopyError{"open-src", src, dst, err}
 	}
 
 	defer s.Close()
+
+	si, err := Fstat(s)
+	if err != nil {
+		return &CopyError{"stat-src", src, dst, err}
+	}
 
 	d, err := NewSafeFile(dst, OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
 	if err != nil {
@@ -67,6 +66,7 @@ func sysCopyFile(dst, src string, perm fs.FileMode) error {
 		return err
 	}
 
+	// SafeFile.Close() does proper fsync() before closing.
 	if err = d.Close(); err != nil {
 		return &CopyError{"close", src, dst, err}
 	}
@@ -89,7 +89,7 @@ func sysCopyFd(dst, src *os.File) error {
 		return &CopyError{"clone", src.Name(), dst.Name(), err}
 	}
 
-	st, err := src.Stat()
+	st, err := Fstat(src)
 	if err != nil {
 		return &CopyError{"stat-src", src.Name(), dst.Name(), err}
 	}

@@ -42,12 +42,6 @@ func copyViaMmap(dst, src *os.File) error {
 
 // slowCopy copies src to dst via mmap
 func slowCopy(dst, src string, perm fs.FileMode) error {
-	// never overwrite an existing file.
-	_, err := Stat(dst)
-	if err == nil {
-		return &CopyError{"stat-dst", src, dst, err}
-	}
-
 	s, err := os.Open(src)
 	if err != nil {
 		return &CopyError{"open-src", src, dst, err}
@@ -66,6 +60,7 @@ func slowCopy(dst, src string, perm fs.FileMode) error {
 		return err
 	}
 
+	// SafeFile.Close() does proper fsync() before closing.
 	if err = d.Close(); err != nil {
 		return &CopyError{"close", src, dst, err}
 	}
