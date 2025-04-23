@@ -40,7 +40,7 @@ func (ii *Info) MarshalSize(flag MarshalFlag) int {
 	default:
 		n += len(ii.path) + 4 // name + length
 	}
-	n += xattrlen(ii.Xattr)
+	n += ii.Xattr.MarshalSize()
 
 	return 1 + n + 4
 }
@@ -85,7 +85,9 @@ func (ii *Info) MarshalTo(b []byte, flag MarshalFlag) (int, error) {
 		b = encstr(b, ii.path)
 	}
 
-	b = encxattr(b, ii.Xattr)
+	if _, err := ii.Xattr.MarshalTo(b); err != nil {
+		return 0, err
+	}
 	return sz, nil
 }
 
@@ -154,91 +156,9 @@ func (ii *Info) unmarshalV1(b []byte, z int) (int, error) {
 		return 0, err
 	}
 
-	b, ii.Xattr, err = decxattr(b)
-	if err != nil {
+	ii.Xattr = make(Xattr)
+	if _, err := ii.Xattr.Unmarshal(b); err != nil {
 		return 0, err
 	}
 	return z + 4, nil
-}
-
-func xattrlen(x Xattr) int {
-	n := 4 // length of kv blob
-	for k, v := range x {
-		n += (4 + 4) // lengths of each string
-		n += len(k)
-		n += len(v)
-	}
-	return n
-}
-
-func encxattr(b []byte, x Xattr) []byte {
-	z := 0
-
-	// we'll write the blob len at the end
-	blen := b[:4]
-	b = b[4:]
-
-	// first assemble the KV pairs
-	for k, v := range x {
-		b = enc32(b, len(k))
-		b = enc32(b, len(v))
-		z += 8
-		n := copy(b, []byte(k))
-		b = b[n:]
-		z += n
-		n = copy(b, []byte(v))
-		b = b[n:]
-		z += n
-	}
-
-	// finally write the length of what we assembled
-	enc32(blen, z)
-	return b
-}
-
-func decxattr(b []byte) ([]byte, Xattr, error) {
-	if len(b) < 4 {
-		return nil, nil, fmt.Errorf("unmarshal: xattr: buf len %d: %w", len(b), ErrTooSmall)
-	}
-
-	var z int
-
-	b, z = dec32[int](b)
-	if len(b) < z {
-		return nil, nil, fmt.Errorf("unmarshal: xattr: buf len %d, want %d: %w", len(b), z, ErrTooSmall)
-	}
-
-	ret := b[z:]
-	x := make(Xattr)
-	j := 0
-	for z > 0 {
-		var kl, vl int
-
-		if len(b) < 8 {
-			return nil, nil, fmt.Errorf("unmarshal: xattr: %d: buf len %d, want 8: %w", j, len(b), ErrTooSmall)
-		}
-
-		b, kl = dec32[int](b)
-		b, vl = dec32[int](b)
-		z -= 8
-
-		if len(b) < kl {
-			return nil, nil, fmt.Errorf("unmarshal: xattr: key %d: buf len %d, want %d: %w", j, len(b), kl, ErrTooSmall)
-		}
-		k := string(b[:kl])
-		b = b[kl:]
-		z -= kl
-
-		if len(b) < vl {
-			return nil, nil, fmt.Errorf("unmarshal: xattr: key %d: buf len %d, want %d: %w", j, len(b), vl, ErrTooSmall)
-		}
-		v := string(b[:vl])
-		b = b[vl:]
-		z -= vl
-
-		x[k] = v
-		j++
-	}
-
-	return ret, x, nil
 }
