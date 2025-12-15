@@ -168,10 +168,10 @@ func Walk(names []string, opt Options) (chan *fio.Info, chan error) {
 		out <- fi
 	}
 
-	d.doWalk(names)
-
-	// close the channels when we're all done
+	// We need to do the walk in the go-routine and wait until all the work is done.
+	// We have to return the chans rightaway
 	go func() {
+		d.doWalk(names)
 		d.dirWg.Wait()
 		close(d.ch)
 		close(out)
