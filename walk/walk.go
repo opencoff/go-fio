@@ -58,6 +58,26 @@ const (
 	ALL = FILE | DIR | SYMLINK | DEVICE | SPECIAL
 )
 
+// Entry is one walk event: a stat'd file system entry plus walk-specific
+// context (currently just the depth relative to the root passed to Walk).
+//
+// Roots passed to Walk are at Depth 0. Their direct children are at 1,
+// and so on. Depth survives symlink resolution: a symlink followed to a
+// directory retains the symlink's depth (descent through the link does
+// not restart counting).
+//
+// fio.Info is embedded by value. All of its methods (Path, Name, Mode,
+// ModTime, IsDir, ...) are therefore directly callable on *Entry.
+//
+// NOTE: the *Entry pointer delivered to WalkFunc's apply callback and
+// Options.Filter is only valid for the duration of the call. Callers who
+// need to retain data across calls must copy the Entry value itself
+// (e.g. `keep := *e`), not capture the pointer.
+type Entry struct {
+	fio.Info
+	Depth int
+}
+
 // Options control the behavior of the filesystem walk.
 type Options struct {
 	// Number of go-routines to use; if not set (ie 0),
@@ -88,15 +108,24 @@ type Options struct {
 	// Filter is an optional caller provided callback to similarly
 	// exclude entries from further traversal.
 	// This function must return True if this entry should
-	// no longer be processed. ie filtered out.
-	Filter func(fi *fio.Info) (bool, error)
+	// no longer be processed. ie filtered out. For directories, a
+	// true return also prevents descent into that directory.
+	//
+	// The *Entry is only valid for the duration of the call; copy
+	// the Entry value if you need to retain any of its data.
+	Filter func(e *Entry) (bool, error)
+}
+
+// walkItem is the unit of work queued between doWalk and workers.
+type walkItem struct {
+	path  string
+	depth int
 }
 
 // internal state
 type walkState struct {
 	Options
-	ch    chan string
-	out   chan *fio.Info
+	ch    chan walkItem
 	errch chan error
 
 	// type mask for output filtering
@@ -114,10 +143,10 @@ type walkState struct {
 	filterName func(nm string) bool
 
 	// return true if we haven't crossed mount point
-	singlefs func(fi *fio.Info) bool
+	singlefs func(e *Entry) bool
 
-	// the output action - either send info via chan or call user supplied func
-	apply func(fi *fio.Info)
+	// the output action - either send entry via chan or call user supplied func
+	apply func(e *Entry)
 
 	// Tracks device major:minor to detect mount-point crossings
 	fs  sync.Map
@@ -153,19 +182,21 @@ func (t Type) String() string {
 }
 
 // Walk traverses the entries in 'names' in a concurrent fashion and returns
-// results in a channel of *fio.Info. The caller must service the channel. Any errors
-// encountered during the walk are returned in the error channel.
-func Walk(names []string, opt Options) (chan *fio.Info, chan error) {
+// results in a channel of Entry values. Each Entry carries a stat-filled
+// fio.Info (embedded by value) and the Depth relative to the root that
+// reached it. The caller must service the channel. Any errors encountered
+// during the walk are returned in the error channel.
+func Walk(names []string, opt Options) (chan Entry, chan error) {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
 
-	out := make(chan *fio.Info, opt.Concurrency)
+	out := make(chan Entry, opt.Concurrency)
 	d := newWalkState(opt)
 
 	// This function sends output to a chan
-	d.apply = func(fi *fio.Info) {
-		out <- fi
+	d.apply = func(e *Entry) {
+		out <- *e
 	}
 
 	// We need to do the walk in the go-routine and wait until all the work is done.
@@ -186,7 +217,12 @@ func Walk(names []string, opt Options) (chan *fio.Info, chan error) {
 // for entries that match criteria in 'opt'. The apply function must be concurrency-safe
 // ie it will be called concurrently from multiple go-routines. Any errors reported by
 // 'apply' will be returned from WalkFunc().
-func WalkFunc(names []string, opt Options, apply func(fi *fio.Info) error) error {
+//
+// The *Entry passed to apply is only valid for the duration of the call.
+// If the callback needs to retain any of the entry's data across calls
+// (e.g. to store in a map), it must copy the Entry value itself rather
+// than capturing the pointer.
+func WalkFunc(names []string, opt Options, apply func(e *Entry) error) error {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
@@ -194,8 +230,8 @@ func WalkFunc(names []string, opt Options, apply func(fi *fio.Info) error) error
 	d := newWalkState(opt)
 
 	// This calls the caller supplied 'apply' func
-	d.apply = func(fi *fio.Info) {
-		if err := apply(fi); err != nil {
+	d.apply = func(e *Entry) {
+		if err := apply(e); err != nil {
 			d.errch <- err
 		}
 	}
@@ -230,13 +266,13 @@ func WalkFunc(names []string, opt Options, apply func(fi *fio.Info) error) error
 func newWalkState(opt Options) *walkState {
 	d := &walkState{
 		Options: opt,
-		ch:      make(chan string, opt.Concurrency),
+		ch:      make(chan walkItem, opt.Concurrency),
 		errch:   make(chan error, opt.Concurrency),
 
 		filterName: func(_ string) bool {
 			return false
 		},
-		singlefs: func(_ *fio.Info) bool {
+		singlefs: func(_ *Entry) bool {
 			return true
 		},
 	}
@@ -252,7 +288,7 @@ func newWalkState(opt Options) *walkState {
 	// default accept filter
 	if d.Filter == nil {
 		// by default - "don't filter anything"
-		d.Filter = func(_ *fio.Info) (bool, error) {
+		d.Filter = func(_ *Entry) (bool, error) {
 			return false, nil
 		}
 	}
@@ -278,7 +314,7 @@ func newWalkState(opt Options) *walkState {
 // traverse the FS in a concurrent fashion.
 func (d *walkState) doWalk(names []string) {
 	// send work to workers
-	dirs := make([]string, 0, len(names))
+	dirs := make([]walkItem, 0, len(names))
 	for i := range names {
 		nm := strings.TrimSuffix(names[i], "/")
 		if len(nm) == 0 {
@@ -289,18 +325,18 @@ func (d *walkState) doWalk(names []string) {
 			continue
 		}
 
-		fi := d.newInfo()
-		if err := fio.Lstatm(nm, fi); err != nil {
+		e := d.newEntry(0)
+		if err := fio.Lstatm(nm, &e.Info); err != nil {
 			d.error(&Error{"lstat", nm, err})
 			continue
 		}
 
 		// don't process entries we've already seen
-		if d.isEntrySeen(fi) {
+		if d.isEntrySeen(e) {
 			continue
 		}
 
-		skip, err := d.Filter(fi)
+		skip, err := d.Filter(e)
 		if err != nil {
 			d.error(&Error{"filter", nm, err})
 			continue
@@ -309,21 +345,21 @@ func (d *walkState) doWalk(names []string) {
 			continue
 		}
 
-		m := fi.Mode()
+		m := e.Mode()
 		switch {
 		case m.IsDir():
 			if d.OneFS {
-				d.trackFS(fi)
+				d.trackFS(e)
 			}
-			dirs = append(dirs, nm)
+			dirs = append(dirs, walkItem{nm, 0})
 
 		case (m & os.ModeSymlink) > 0:
 			// we may have new info now. The symlink may point to file, dir or
 			// special.
-			dirs = d.doSymlink(fi, dirs)
+			dirs = d.doSymlink(e, dirs)
 
 		default:
-			d.output(fi)
+			d.output(e)
 		}
 	}
 
@@ -334,19 +370,19 @@ func (d *walkState) doWalk(names []string) {
 
 // worker thread to walk directories
 func (d *walkState) worker() {
-	for nm := range d.ch {
-		fi := d.newInfo()
-		if err := fio.Lstatm(nm, fi); err != nil {
-			d.error(&Error{"lstat-wrk", nm, err})
+	for it := range d.ch {
+		e := d.newEntry(it.depth)
+		if err := fio.Lstatm(it.path, &e.Info); err != nil {
+			d.error(&Error{"lstat-wrk", it.path, err})
 			d.dirWg.Done()
 			continue
 		}
 
 		// we are _sure_ this is a dir.
-		d.output(fi)
+		d.output(e)
 
 		// Now process the contents of this dir
-		d.walkPath(nm)
+		d.walkPath(it.path, it.depth)
 
 		// It is crucial that we do this as the last thing in the processing loop.
 		// Otherwise, we have a race condition where the workers will prematurely quit.
@@ -358,16 +394,15 @@ func (d *walkState) worker() {
 }
 
 // output action for entries we encounter
-func (d *walkState) output(fi *fio.Info) {
-	m := fi.Mode()
+func (d *walkState) output(e *Entry) {
+	m := e.Mode()
 
 	// we have to special case regular files because there is
 	// no mask for Regular Files!
 	//
 	// For everyone else, we can consult the typ map
 	if (d.typ&m) > 0 || ((d.Type&FILE) > 0 && m.IsRegular()) {
-		//fmt.Printf("out: %s\n", fi.Path())
-		d.apply(fi)
+		d.apply(e)
 	}
 }
 
@@ -388,14 +423,14 @@ func (d *walkState) exclude(nm string) bool {
 
 // enqueue a list of dirs in a separate go-routine so the caller is
 // not blocked (deadlocked)
-func (d *walkState) enq(dirs []string) {
-	if len(dirs) > 0 {
-		d.dirWg.Add(len(dirs))
-		go func(dirs []string) {
-			for _, nm := range dirs {
-				d.ch <- nm
+func (d *walkState) enq(items []walkItem) {
+	if len(items) > 0 {
+		d.dirWg.Add(len(items))
+		go func(items []walkItem) {
+			for _, it := range items {
+				d.ch <- it
 			}
-		}(dirs)
+		}(items)
 	}
 }
 
@@ -422,7 +457,7 @@ func readDir(nm string) ([]string, error) {
 // the caller (d.worker()) won't decrement that wait-count until this function
 // returns. And by then the wait-count would've been bumped up by the number of
 // dirs we've seen here.
-func (d *walkState) walkPath(nm string) {
+func (d *walkState) walkPath(nm string, depth int) {
 	names, err := readDir(nm)
 	if err != nil {
 		d.error(err)
@@ -434,7 +469,8 @@ func (d *walkState) walkPath(nm string) {
 		nm = ""
 	}
 
-	dirs := make([]string, 0, len(names)/2)
+	childDepth := depth + 1
+	dirs := make([]walkItem, 0, len(names)/2)
 	for i := range names {
 		entry := names[i]
 
@@ -446,20 +482,19 @@ func (d *walkState) walkPath(nm string) {
 			continue
 		}
 
-		fi := d.newInfo()
-		err := fio.Lstatm(fp, fi)
-		if err != nil {
+		e := d.newEntry(childDepth)
+		if err := fio.Lstatm(fp, &e.Info); err != nil {
 			d.error(&Error{"lstat", fp, err})
 			continue
 		}
 
 		// don't process entries we've already seen
-		if d.isEntrySeen(fi) {
+		if d.isEntrySeen(e) {
 			//fmt.Printf("%s: +dup-inode\n", fp)
 			continue
 		}
 
-		skip, err := d.Filter(fi)
+		skip, err := d.Filter(e)
 		if err != nil {
 			d.error(&Error{"filter", fp, err})
 			continue
@@ -468,21 +503,21 @@ func (d *walkState) walkPath(nm string) {
 			continue
 		}
 
-		m := fi.Mode()
+		m := e.Mode()
 		switch {
 		case m.IsDir():
 			// don't descend if this directory is not on the same file system.
-			if d.singlefs(fi) {
-				dirs = append(dirs, fp)
+			if d.singlefs(e) {
+				dirs = append(dirs, walkItem{fp, childDepth})
 			}
 
 		case (m & os.ModeSymlink) > 0:
 			// we may have new info now. The symlink may point to file, dir or
 			// special.
-			dirs = d.doSymlink(fi, dirs)
+			dirs = d.doSymlink(e, dirs)
 
 		default:
-			d.output(fi)
+			d.output(e)
 		}
 	}
 
@@ -491,15 +526,17 @@ func (d *walkState) walkPath(nm string) {
 
 // Walk symlinks and don't process dirs/entries that we've already seen
 // This function updates dirs if the resolved symlink is a dir we have
-// to descend - and returns the possibly updated dirs list.
-func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
+// to descend - and returns the possibly updated dirs list. The resolved
+// entry retains the symlink's Depth (descent does not restart depth
+// counting).
+func (d *walkState) doSymlink(e *Entry, dirs []walkItem) []walkItem {
 	if !d.FollowSymlinks {
-		d.output(fi)
+		d.output(e)
 		return dirs
 	}
 
 	// process symlinks until we are done
-	nm := fi.Path()
+	nm := e.Path()
 	newnm, err := filepath.EvalSymlinks(nm)
 	if err != nil {
 		d.error(&Error{"symlink", nm, err})
@@ -507,23 +544,25 @@ func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
 	}
 	nm = newnm
 
-	// we know this is no longer a symlink
-	if err = fio.Statm(nm, fi); err != nil {
+	// we know this is no longer a symlink. Statm rewrites e.Info only;
+	// e.Depth (the link's own depth) is untouched and is the depth we
+	// report for the resolved target.
+	if err = fio.Statm(nm, &e.Info); err != nil {
 		d.error(&Error{"symlink-stat", nm, err})
 		return dirs
 	}
 
 	// do rest of processing iff we haven't seen this entry before.
-	if !d.isEntrySeen(fi) {
+	if !d.isEntrySeen(e) {
 		switch {
-		case fi.Mode().IsDir():
+		case e.Mode().IsDir():
 			// Check if we crossed mountpoints after symlink
 			// resolution.
-			if d.singlefs(fi) {
-				dirs = append(dirs, nm)
+			if d.singlefs(e) {
+				dirs = append(dirs, walkItem{nm, e.Depth})
 			}
 		default:
-			d.output(fi)
+			d.output(e)
 		}
 	}
 
@@ -532,13 +571,13 @@ func (d *walkState) doSymlink(fi *fio.Info, dirs []string) []string {
 
 // track this inode to detect loops; return true if we've seen it before
 // false otherwise.
-func (d *walkState) isEntrySeen(st *fio.Info) bool {
+func (d *walkState) isEntrySeen(e *Entry) bool {
 	if !d.IgnoreDuplicateInode {
 		return false
 	}
 
-	key := fmt.Sprintf("%d:%d:%d", st.Dev, st.Rdev, st.Ino)
-	x, ok := d.ino.LoadOrStore(key, st)
+	key := fmt.Sprintf("%d:%d:%d", e.Dev, e.Rdev, e.Ino)
+	x, ok := d.ino.LoadOrStore(key, &e.Info)
 	if !ok {
 		return false
 	}
@@ -547,9 +586,7 @@ func (d *walkState) isEntrySeen(st *fio.Info) bool {
 	// sync.Map
 	xt := x.(*fio.Info)
 
-	//fmt.Printf("# %s: old ino: %d:%d:%d  <-> new ino: %d:%d:%d\n", nm, xt.Dev, xt.Rdev, xt.Ino, st.Dev, st.Rdev, st.Ino)
-
-	if xt.Dev != st.Dev || xt.Rdev != st.Rdev || xt.Ino != st.Ino {
+	if xt.Dev != e.Dev || xt.Rdev != e.Rdev || xt.Ino != e.Ino {
 		return false
 	}
 
@@ -558,14 +595,14 @@ func (d *walkState) isEntrySeen(st *fio.Info) bool {
 
 // track this file for future mount points
 // We call this function once for each entry passed to Walk().
-func (d *walkState) trackFS(fi *fio.Info) {
-	key := fmt.Sprintf("%d:%d", fi.Dev, fi.Rdev)
-	d.fs.Store(key, fi)
+func (d *walkState) trackFS(e *Entry) {
+	key := fmt.Sprintf("%d:%d", e.Dev, e.Rdev)
+	d.fs.Store(key, &e.Info)
 }
 
 // Return true if the inode is on the same file system as the command line args
-func (d *walkState) isSingleFS(fi *fio.Info) bool {
-	key := fmt.Sprintf("%d:%d", fi.Dev, fi.Rdev)
+func (d *walkState) isSingleFS(e *Entry) bool {
+	key := fmt.Sprintf("%d:%d", e.Dev, e.Rdev)
 	if _, ok := d.fs.Load(key); ok {
 		return true
 	}
@@ -573,13 +610,13 @@ func (d *walkState) isSingleFS(fi *fio.Info) bool {
 }
 
 // enq an error
-func (d *walkState) error(e error) {
-	d.errch <- e
+func (d *walkState) error(err error) {
+	d.errch <- err
 }
 
-// TODO mem pool for info
-func (d *walkState) newInfo() *fio.Info {
-	return new(fio.Info)
+// TODO mem pool for entry
+func (d *walkState) newEntry(depth int) *Entry {
+	return &Entry{Depth: depth}
 }
 
 // EOF

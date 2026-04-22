@@ -289,11 +289,15 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 	rhs := fio.NewMap()
 
 	go func(w *sync.WaitGroup) {
-		err := walk.WalkFunc([]string{src}, wo, func(fi *fio.Info) error {
-			rel, _ := filepath.Rel(src, fi.Path())
+		err := walk.WalkFunc([]string{src}, wo, func(e *walk.Entry) error {
+			rel, _ := filepath.Rel(src, e.Path())
 			if rel != "." {
-				lhs.Store(rel, fi)
-				option.o.VisitSrc(fi)
+				// the *Entry is valid only for this call; copy the
+				// embedded Info out to a heap-resident *fio.Info so
+				// the map and observer can retain it safely.
+				info := e.Info
+				lhs.Store(rel, &info)
+				option.o.VisitSrc(&info)
 			}
 			return nil
 		})
@@ -304,11 +308,12 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 	}(&wg)
 
 	go func(w *sync.WaitGroup) {
-		err := walk.WalkFunc([]string{dst}, wo, func(fi *fio.Info) error {
-			rel, _ := filepath.Rel(dst, fi.Path())
+		err := walk.WalkFunc([]string{dst}, wo, func(e *walk.Entry) error {
+			rel, _ := filepath.Rel(dst, e.Path())
 			if rel != "." {
-				rhs.Store(rel, fi)
-				option.o.VisitDst(fi)
+				info := e.Info
+				rhs.Store(rel, &info)
+				option.o.VisitDst(&info)
 			}
 			return nil
 		})

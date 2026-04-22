@@ -202,7 +202,10 @@ func newWalk(tx *test) (map[string]fs.FileInfo, error) {
 	}()
 
 	for o := range och {
-		res[o.Path()] = o
+		// Entry (value) does not satisfy fs.FileInfo because Info's
+		// methods are pointer-receiver; *Entry does. Retain by copy.
+		keep := o
+		res[keep.Path()] = &keep
 	}
 
 	wg.Wait()

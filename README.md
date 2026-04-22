@@ -17,4 +17,8 @@ concurrency to speed up the underlying functions.
 - `cmp`: compares two directory trees and returns their differences
 - `clone`: clones a source directory tree to a destination - skipping over identical
   files.
-- `walk`: A concurrent directory tree traversal library
+- `walk`: A concurrent directory tree traversal library. Emits `walk.Entry`
+  values which embed a stat-filled `fio.Info` plus a `Depth` field
+  (relative to the root passed to `Walk`). Roots are at depth 0, their
+  direct children at 1, and so on; depth is available inside the
+  `Options.Filter` callback, enabling max-depth style pruning.
