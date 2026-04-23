@@ -179,7 +179,7 @@ func repl(nm string, x Xattr, list func(nm string) ([]string, error),
 	set func(nm, key string, val []byte) error) error {
 
 	if err := clear(nm, list, del); err != nil {
-		return nil
+		return err
 	}
 
 	for k, v := range x {
