@@ -577,20 +577,8 @@ func (d *walkState) isEntrySeen(e *Entry) bool {
 	}
 
 	key := fmt.Sprintf("%d:%d:%d", e.Dev, e.Rdev, e.Ino)
-	x, ok := d.ino.LoadOrStore(key, &e.Info)
-	if !ok {
-		return false
-	}
-
-	// This can't fail because we checked it above before storing in the
-	// sync.Map
-	xt := x.(*fio.Info)
-
-	if xt.Dev != e.Dev || xt.Rdev != e.Rdev || xt.Ino != e.Ino {
-		return false
-	}
-
-	return true
+	_, loaded := d.ino.LoadOrStore(key, &e.Info)
+	return loaded
 }
 
 // track this file for future mount points
