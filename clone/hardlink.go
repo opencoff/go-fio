@@ -55,14 +55,19 @@ func (h *hardlinker) track(src *fio.Info, dst string) bool {
 	}
 
 	k := key(src)
-	orig, ok := h.m.Load(k)
-	if ok {
+	// Atomically decide who is the "original" for this inode.
+	// A racing Load+Store pair would let two goroutines both
+	// claim !ok and both end up copying; LoadOrStore collapses
+	// that decision into a single atomic step.
+	orig, loaded := h.m.LoadOrStore(k, dst)
+	if loaded {
 		h.links.Store(dst, orig)
 		return true
 	}
 
-	// remember to do the links after all the copies are done.
-	h.m.Store(k, dst)
+	// We are the first caller for this inode; the copy will be
+	// done by the caller, and subsequent callers will record
+	// hardlinks against 'dst'.
 	return false
 }
 
