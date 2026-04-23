@@ -112,9 +112,5 @@ func sysCopyFd(dst, src *os.File) error {
 		woff += int64(m)
 	}
 
-	if _, err = dst.Seek(0, os.SEEK_SET); err != nil {
-		return &CopyError{"seek", src.Name(), dst.Name(), err}
-	}
-
 	return nil
 }
