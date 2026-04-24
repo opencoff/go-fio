@@ -144,8 +144,25 @@ func cloneugid(dst string, fi *fio.Info) error {
 	return nil
 }
 
+// clonemode copies the permission bits from src to dst.
+//
+// os.Chmod follows symlinks, so a plain Chmod on a cloned symlink would
+// chmod the target rather than the symlink itself. For symlinks we
+// route through the platform-specific lchmod helper:
+//   - linux: no-op (the kernel does not support changing symlink mode)
+//   - darwin/*bsd: uses fchmodat(AT_FDCWD, dst, mode, AT_SYMLINK_NOFOLLOW)
+//
+// ENOTSUP / EOPNOTSUPP on the symlink path is swallowed so a filesystem
+// or kernel that refuses to chmod the link does not fail the clone.
 func clonemode(dst string, fi *fio.Info) error {
-	if err := os.Chmod(dst, fi.Mode()); err != nil {
+	m := fi.Mode()
+	if m&fs.ModeSymlink != 0 {
+		if err := lchmod(dst, m); err != nil {
+			return &Error{"lchmod", fi.Path(), dst, err}
+		}
+		return nil
+	}
+	if err := os.Chmod(dst, m); err != nil {
 		return &Error{"chmod", fi.Path(), dst, err}
 	}
 	return nil
