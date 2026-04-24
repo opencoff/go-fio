@@ -15,47 +15,45 @@ package cmp
 
 import (
 	"io/fs"
+	"runtime"
 
 	"github.com/opencoff/go-fio"
+	"golang.org/x/sync/errgroup"
 )
 
-type work struct {
-	nm string
-	fi *fio.Info
-}
-
 func (c *cmp) doDiff() error {
-	wp := fio.NewWorkPool[work](c.Concurrency, func(i int, w work) error {
-		c.lhsDiff(w.nm, w.fi)
-		return nil
-	})
+	conc := c.Concurrency
+	if conc <= 0 {
+		conc = runtime.NumCPU()
+	}
+
+	var eg errgroup.Group
+	eg.SetLimit(conc)
 
 	c.lhs.Range(func(nm string, fi *fio.Info) bool {
-		w := work{nm, fi}
-		wp.Submit(w)
+		eg.Go(func() error {
+			c.lhsDiff(nm, fi)
+			return nil
+		})
 		return true
 	})
-	wp.Close()
-
-	if err := wp.Wait(); err != nil {
+	if err := eg.Wait(); err != nil {
 		return err
 	}
 
-	// Process the rhs only after we've done the left side;
-	// we need the done and funny maps to be complete before
-	// we do this.
-	wp = fio.NewWorkPool[work](c.Concurrency, func(i int, w work) error {
-		c.rhsDiff(w.nm, w.fi)
-		return nil
-	})
+	// Process the rhs only after we've done the left side; rhsDiff
+	// reads c.done and c.funny, which lhsDiff populates.
+	var eg2 errgroup.Group
+	eg2.SetLimit(conc)
+
 	c.rhs.Range(func(nm string, fi *fio.Info) bool {
-		w := work{nm, fi}
-		wp.Submit(w)
+		eg2.Go(func() error {
+			c.rhsDiff(nm, fi)
+			return nil
+		})
 		return true
 	})
-	wp.Close()
-
-	return wp.Wait()
+	return eg2.Wait()
 }
 
 func (c *cmp) lhsDiff(nm string, lhs *fio.Info) {

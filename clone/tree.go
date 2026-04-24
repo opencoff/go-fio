@@ -23,11 +23,12 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/opencoff/go-fio"
 	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
+	"github.com/puzpuzpuz/xsync/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 type Option func(o *treeopt)
@@ -165,7 +166,7 @@ func Tree(ctx context.Context, dst, src string, opt ...Option) error {
 
 	n := newCloner(diff, &option)
 
-	if err = n.clone(); err != nil {
+	if err = n.clone(ctx); err != nil {
 		return err
 	}
 
@@ -179,22 +180,17 @@ type dircloner struct {
 
 	h *hardlinker
 
-	// sharded dirs that are modified
-	dirs []map[string]bool
+	// set of dst dirs modified during the clone. Populated concurrently
+	// by worker goroutines; later walked sequentially by fixup.
+	dirs *xsync.MapOf[string, bool]
 }
 
 func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
-	ncpu := opt.Concurrency
-
 	cc := &dircloner{
 		treeopt:    *opt,
 		Difference: d,
 		h:          newHardlinker(),
-		dirs:       make([]map[string]bool, ncpu),
-	}
-
-	for i := 0; i < ncpu; i++ {
-		cc.dirs[i] = make(map[string]bool, 8)
+		dirs:       xsync.NewMapOf[string, bool](),
 	}
 
 	cc.o.Difference(d)
@@ -212,136 +208,116 @@ func (cc *dircloner) xcopy(dst, src string) error {
 	return nil
 }
 
-func (cc *dircloner) clone() error {
-	// first make the new dirs before attempting to make files.
-	// We need to do this first before we copy over any new files.
-	dirs := dirlist(cc.LeftDirs)
-	dirWp := fio.NewWorkPool[copyOp](cc.Concurrency, func(_ int, w copyOp) error {
-		return cc.xcopy(w.dst, w.src)
-	})
+func (cc *dircloner) clone(ctx context.Context) error {
+	conc := cc.Concurrency
+	if conc <= 0 {
+		conc = runtime.NumCPU()
+	}
 
-	dm := cc.dirs[0]
+	// Pass 1: create all new dirs before files. Errgroup fail-fast with
+	// ctx cancel; the first mkdir failure aborts the rest.
+	dirs := dirlist(cc.LeftDirs)
+	eg, egctx := errgroup.WithContext(ctx)
+	eg.SetLimit(conc)
 	for _, nm := range dirs {
+		nm := nm
 		src := filepath.Join(cc.Src, nm)
 		dst := filepath.Join(cc.Dst, nm)
 
-		dm[dst] = true
-		dirWp.Submit(copyOp{src, dst})
+		cc.dirs.Store(dst, true)
 		cc.o.Mkdir(dst)
-	}
-	dirWp.Close()
-	if err := dirWp.Wait(); err != nil {
-		return err
-	}
-
-	// now start copying and deleting files
-	// each worker will track the dirs they modify in a sharded map
-	// the shards will be combined later
-
-	wp := fio.NewWorkPool[work](cc.Concurrency, func(i int, w work) error {
-		var err error
-		cc.dirs[i], err = cc.dowork(cc.dirs[i], w)
-		return err
-	})
-
-	// now submit work to the workpool
-
-	// LeftFiles => copy to new dirs
-	// Diff => overwrite + COW src to dst
-	// RightFiles -- delete first
-	// RightDirs -- delete last
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
-	go func() {
-		cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
-			wp.Submit(&delOp{fi.Path()})
-			cc.o.Delete(fi.Path())
-			return true
-		})
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
-			wp.Submit(&delOp{fi.Path()})
-			cc.o.Delete(fi.Path())
-			return true
-		})
-		wg.Done()
-	}()
-
-	// now submit copies
-	wg.Add(1)
-	go func() {
-		cc.Diff.Range(func(_ string, p fio.Pair) bool {
-			src := p.Src.Path()
-			dst := p.Dst.Path()
-
-			if linked := cc.h.track(p.Src, dst); !linked {
-				wp.Submit(&copyOp{src, dst})
-				cc.o.Copy(dst, src)
+		eg.Go(func() error {
+			if egctx.Err() != nil {
+				return egctx.Err()
 			}
-			return true
+			return cc.xcopy(dst, src)
 		})
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		cc.LeftFiles.Range(func(nm string, fi *fio.Info) bool {
-			src := filepath.Join(cc.Src, nm)
-			dst := filepath.Join(cc.Dst, nm)
-
-			if linked := cc.h.track(fi, dst); !linked {
-				wp.Submit(&copyOp{src, dst})
-				cc.o.Copy(dst, src)
-			}
-			return true
-		})
-		wg.Done()
-	}()
-
-	// submit all the work and then tell workers we're done
-	wg.Wait()
-	wp.Close()
-	if err := wp.Wait(); err != nil {
+	}
+	if err := eg.Wait(); err != nil {
 		return err
 	}
 
-	// now complete the pending hardlinks
-	wp = fio.NewWorkPool[work](cc.Concurrency, func(i int, w work) error {
-		var err error
-		cc.dirs[i], err = cc.dowork(cc.dirs[i], w)
-		return err
-	})
+	// Pass 2: copy/delete files and directories. Iteration order:
+	//   RightFiles → del, RightDirs → del, Diff → copy, LeftFiles → copy.
+	// All share one errgroup; the first error cancels egctx and causes
+	// subsequent eg.Go calls to return egctx.Err() early.
+	eg, egctx = errgroup.WithContext(ctx)
+	eg.SetLimit(conc)
 
-	wg.Add(1)
-	go func() {
-		cc.h.hardlinks(func(d, s string) {
-			wp.Submit(&linkOp{s, d})
-			cc.o.Link(d, s)
-		})
-		wg.Done()
-	}()
-
-	wg.Wait()
-	wp.Close()
-	if err := wp.Wait(); err != nil {
-		return err
-	}
-
-	// merge the various dir shards into a single one
-	dirmap := cc.dirs[0]
-	for _, dirs := range cc.dirs[1:] {
-		for nm := range dirs {
-			dirmap[nm] = true
+	submit := func(p string, fn func() error) bool {
+		if egctx.Err() != nil {
+			return false
 		}
+		eg.Go(func() error {
+			if egctx.Err() != nil {
+				return egctx.Err()
+			}
+			return fn()
+		})
+		return true
 	}
 
-	// fixup mtimes of modified dirs
+	cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
+		nm := fi.Path()
+		cc.o.Delete(nm)
+		return submit(nm, func() error { return cc.doDel(nm) })
+	})
+
+	cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
+		nm := fi.Path()
+		cc.o.Delete(nm)
+		return submit(nm, func() error { return cc.doDel(nm) })
+	})
+
+	cc.Diff.Range(func(_ string, p fio.Pair) bool {
+		src := p.Src.Path()
+		dst := p.Dst.Path()
+		if linked := cc.h.track(p.Src, dst); linked {
+			return egctx.Err() == nil
+		}
+		cc.o.Copy(dst, src)
+		return submit(dst, func() error { return cc.doCopy(dst, src) })
+	})
+
+	cc.LeftFiles.Range(func(nm string, fi *fio.Info) bool {
+		src := filepath.Join(cc.Src, nm)
+		dst := filepath.Join(cc.Dst, nm)
+		if linked := cc.h.track(fi, dst); linked {
+			return egctx.Err() == nil
+		}
+		cc.o.Copy(dst, src)
+		return submit(dst, func() error { return cc.doCopy(dst, src) })
+	})
+
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// Pass 3: resolved hardlinks.
+	eg, egctx = errgroup.WithContext(ctx)
+	eg.SetLimit(conc)
+	cc.h.hardlinks(func(d, s string) {
+		if egctx.Err() != nil {
+			return
+		}
+		cc.o.Link(d, s)
+		eg.Go(func() error {
+			if egctx.Err() != nil {
+				return egctx.Err()
+			}
+			return cc.doLink(d, s)
+		})
+	})
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// fixup mtimes of modified dst dirs
+	dirmap := make(map[string]bool)
+	cc.dirs.Range(func(k string, _ bool) bool {
+		dirmap[k] = true
+		return true
+	})
 	return cc.fixup(dirmap)
 }
 
@@ -396,37 +372,38 @@ func _Keys[M ~map[K]V, K comparable, V any](m M) []K {
 	return v
 }
 
-func (cc *dircloner) dowork(dirs map[string]bool, w work) (map[string]bool, error) {
-	track := func(p string) {
-		dn := filepath.Dir(p)
-		dirs[dn] = true
+// track records a dst-dir as modified. fixup later walks these to
+// update dir mtimes in deepest-first order.
+func (cc *dircloner) track(p string) {
+	cc.dirs.Store(filepath.Dir(p), true)
+}
+
+func (cc *dircloner) doCopy(dst, src string) error {
+	if err := cc.xcopy(dst, src); err != nil {
+		return err
 	}
+	cc.track(dst)
+	return nil
+}
 
-	switch z := w.(type) {
-	case *copyOp:
-		if err := cc.xcopy(z.dst, z.src); err != nil {
-			return dirs, err
-		}
-		track(z.dst)
-
-	case *delOp:
-		err := os.RemoveAll(z.name)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return dirs, &Error{"rm", cc.Src, cc.Dst, err}
-		}
-		track(filepath.Dir(z.name))
-
-	case *linkOp:
-		_ = os.Remove(z.dst) // XXX There is no way to overwrite?
-		if err := os.Link(z.src, z.dst); err != nil {
-			return dirs, &Error{"ln", cc.Src, cc.Dst, err}
-		}
-		track(z.dst)
-	default:
-		err := fmt.Errorf("unknown op %T", w)
-		return dirs, &Error{"clone", cc.Src, cc.Dst, err}
+func (cc *dircloner) doDel(name string) error {
+	if err := os.RemoveAll(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return &Error{"rm", cc.Src, cc.Dst, err}
 	}
-	return dirs, nil
+	// NOTE: historical WorkPool implementation tracked
+	// filepath.Dir(filepath.Dir(name)) here (grandparent). Preserved
+	// intentionally - behavior change belongs in a separate commit.
+	cc.track(filepath.Dir(name))
+	return nil
+}
+
+func (cc *dircloner) doLink(dst, src string) error {
+	_ = os.Remove(dst) // XXX There is no way to overwrite?
+	if err := os.Link(src, dst); err != nil {
+		return &Error{"ln", cc.Src, cc.Dst, err}
+	}
+	cc.track(dst)
+	return nil
 }
 
 // take a list of paths and return only longest prefixes
@@ -464,25 +441,6 @@ func longestPrefixes(keys []string) []string {
 	}
 	dirs = append(dirs, cur)
 	return dirs
-}
-
-type work any
-
-type copyOp struct {
-	src, dst string
-}
-
-type delOp struct {
-	name string
-}
-
-type linkOp struct {
-	src, dst string
-}
-
-type mdOp struct {
-	src *fio.Info
-	dst string
 }
 
 func newFunnyError(m *fio.PairMap) *FunnyError {

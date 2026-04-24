@@ -78,6 +78,7 @@ func TestWalkCtxCancel(t *testing.T) {
 	before := runtime.NumGoroutine()
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	ch := Walk(ctx, []string{root}, Options{Type: ALL, Concurrency: 4})
 
 	// consume a handful of entries, then cancel

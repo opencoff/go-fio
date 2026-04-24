@@ -9,6 +9,7 @@ require (
 	github.com/opencoff/go-testrunner v0.1.2
 	github.com/pkg/xattr v0.4.10
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
+	golang.org/x/sync v0.10.0
 	golang.org/x/sys v0.31.0
 )
 
