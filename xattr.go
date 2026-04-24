@@ -88,8 +88,15 @@ func LgetXattr(nm string) (Xattr, error) {
 
 // SetXattr sets/updates the xattr list for a given file.
 // Errors caused by a filesystem that does not support extended
-// attributes are wrapped as ErrXattrUnsupported.
+// attributes are wrapped as ErrXattrUnsupported. On Linux, a
+// preflight checks whether the calling process has the capability
+// required to write any privileged-namespace keys (trusted.*,
+// security.*); a missing capability surfaces as
+// ErrXattrCapabilityMissing before we hit the kernel's EPERM.
 func SetXattr(nm string, x Xattr) error {
+	if err := checkXattrCapabilities(x); err != nil {
+		return err
+	}
 	for k, v := range x {
 		if err := xattr.Set(nm, k, []byte(v)); err != nil {
 			return wrapUnsupported(err)
@@ -102,8 +109,12 @@ func SetXattr(nm string, x Xattr) error {
 // If 'nm' points to a symlink, LSetXattr will set/update the
 // extended attributes of the symlink and *not* the target.
 // Errors caused by a filesystem that does not support extended
-// attributes are wrapped as ErrXattrUnsupported.
+// attributes are wrapped as ErrXattrUnsupported; missing Linux
+// capabilities surface as ErrXattrCapabilityMissing.
 func LsetXattr(nm string, x Xattr) error {
+	if err := checkXattrCapabilities(x); err != nil {
+		return err
+	}
 	for k, v := range x {
 		if err := xattr.LSet(nm, k, []byte(v)); err != nil {
 			return wrapUnsupported(err)
@@ -213,10 +224,17 @@ func clear(nm string, list func(nm string) ([]string, error),
 	return nil
 }
 
-// handy helper to replace all xattr of nm; works for files and symlinks
+// handy helper to replace all xattr of nm; works for files and symlinks.
+// Preflights capabilities for any privileged-namespace keys in x
+// before touching the filesystem, so a cross-namespace restore fails
+// fast with a clear diagnostic rather than halfway through with EPERM.
 func repl(nm string, x Xattr, list func(nm string) ([]string, error),
 	del func(nm, key string) error,
 	set func(nm, key string, val []byte) error) error {
+
+	if err := checkXattrCapabilities(x); err != nil {
+		return err
+	}
 
 	if err := clear(nm, list, del); err != nil {
 		return err

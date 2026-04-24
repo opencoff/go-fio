@@ -199,12 +199,17 @@ func clonemode(dst string, fi *fio.Info) error {
 func updateMeta(dst string, fi *fio.Info, opt metaOpt) error {
 	for _, fp := range mdUpdaters {
 		if err := fp(dst, fi); err != nil {
-			// xattr failures on filesystems that do not support
-			// extended attributes are downgraded to "skip this
-			// cloner, keep going" when the caller opts in. The
-			// chown / chmod / times steps still run.
-			if opt.ignoreUnsupported && errors.Is(err, fio.ErrXattrUnsupported) {
-				continue
+			// Two xattr-specific failure modes are downgraded to
+			// "skip this cloner, keep going" when the caller opts in:
+			//   - ErrXattrUnsupported: destination FS cannot hold xattrs
+			//   - ErrXattrCapabilityMissing: we lack CAP_SYS_ADMIN /
+			//     CAP_MAC_ADMIN to restore a privileged namespace
+			// The chown / chmod / times steps still run.
+			if opt.ignoreUnsupported {
+				if errors.Is(err, fio.ErrXattrUnsupported) ||
+					errors.Is(err, fio.ErrXattrCapabilityMissing) {
+					continue
+				}
 			}
 			return &Error{"md-update", fi.Path(), dst, err}
 		}

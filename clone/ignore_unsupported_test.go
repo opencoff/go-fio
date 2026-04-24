@@ -68,6 +68,47 @@ func TestUpdateMetaIgnoresUnsupported(t *testing.T) {
 	}
 }
 
+// TestUpdateMetaIgnoresCapabilityMissing is the parallel case for
+// Chunk 11: if the xattr cloner fails with ErrXattrCapabilityMissing
+// (e.g. non-root trying to restore a trusted.* xattr), the
+// ignoreUnsupported flag must also skip it so the remaining cloners
+// still run.
+func TestUpdateMetaIgnoresCapabilityMissing(t *testing.T) {
+	orig := mdUpdaters
+	t.Cleanup(func() { mdUpdaters = orig })
+
+	capErr := fmt.Errorf("no CAP_SYS_ADMIN: %w", fio.ErrXattrCapabilityMissing)
+
+	var postRan int
+	mdUpdaters = []cloner{
+		func(dst string, fi *fio.Info) error { return capErr },
+		func(dst string, fi *fio.Info) error { postRan++; return nil },
+	}
+
+	fi := &fio.Info{}
+	fi.SetPath("/fake")
+
+	// strict mode: error bubbles
+	postRan = 0
+	if err := updateMeta("/fake-dst", fi, metaOpt{}); err == nil {
+		t.Fatalf("strict: expected error, got nil")
+	} else if !errors.Is(err, fio.ErrXattrCapabilityMissing) {
+		t.Errorf("strict: got %v, want wrapped ErrXattrCapabilityMissing", err)
+	}
+	if postRan != 0 {
+		t.Errorf("strict: post ran %d, want 0", postRan)
+	}
+
+	// ignore mode: capability error is swallowed, post runs
+	postRan = 0
+	if err := updateMeta("/fake-dst", fi, metaOpt{ignoreUnsupported: true}); err != nil {
+		t.Fatalf("ignore: unexpected error %v", err)
+	}
+	if postRan != 1 {
+		t.Errorf("ignore: post ran %d, want 1", postRan)
+	}
+}
+
 // TestUpdateMetaNonUnsupportedStillFails confirms the flag is narrow:
 // a non-ErrXattrUnsupported error in the xattr slot still fails the
 // clone even when ignoreUnsupported is set.

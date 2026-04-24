@@ -57,3 +57,18 @@ var _ error = &CopyError{}
 // treat this as a non-fatal condition use errors.Is to detect it
 // and downgrade to a skip - see clone.WithIgnoreUnsupported.
 var ErrXattrUnsupported = errors.New("xattr: filesystem does not support extended attributes")
+
+// ErrXattrCapabilityMissing is returned (wrapped) when a caller
+// attempts to write an xattr whose namespace requires a Linux
+// capability the process does not hold:
+//
+//   - trusted.*  requires CAP_SYS_ADMIN
+//   - security.* requires CAP_MAC_ADMIN (or CAP_SYS_ADMIN depending on LSM)
+//
+// Surfacing this as a typed error lets callers emit a clear
+// diagnostic ("needs CAP_SYS_ADMIN to restore trusted.xattr")
+// instead of the raw EPERM that getxattr/setxattr would otherwise
+// return. clone.WithIgnoreUnsupported also treats this error as
+// skippable since the clone cannot succeed with the current
+// privileges.
+var ErrXattrCapabilityMissing = errors.New("xattr: required capability not held")
