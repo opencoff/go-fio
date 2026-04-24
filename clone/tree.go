@@ -406,10 +406,12 @@ func (cc *dircloner) doDel(name string) error {
 	if err := os.RemoveAll(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return &Error{"rm", cc.Src, cc.Dst, err}
 	}
-	// NOTE: historical WorkPool implementation tracked
-	// filepath.Dir(filepath.Dir(name)) here (grandparent). Preserved
-	// intentionally - behavior change belongs in a separate commit.
-	cc.track(filepath.Dir(name))
+	// Track the PARENT of the deleted entry - that's the dir whose
+	// child set just changed and whose mtime fixup needs to restore
+	// from source. The pre-errgroup implementation tracked the
+	// grandparent (double-Dir), which mis-associated the mtime
+	// restore with the wrong directory.
+	cc.track(name)
 	return nil
 }
 
