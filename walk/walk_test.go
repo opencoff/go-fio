@@ -3,6 +3,7 @@
 package walk
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -188,27 +189,20 @@ func newWalk(tx *test) (map[string]fs.FileInfo, error) {
 	}
 
 	res := make(map[string]fs.FileInfo)
-	och, ech := Walk(names[:], opt)
+	och := Walk(context.Background(), names[:], opt)
 
-	var wg sync.WaitGroup
-
-	wg.Add(1)
 	var errs []error
-	go func() {
-		for e := range ech {
-			errs = append(errs, e)
-		}
-		wg.Done()
-	}()
-
 	for o := range och {
+		if o.Err != nil {
+			errs = append(errs, o.Err)
+			continue
+		}
 		// Entry (value) does not satisfy fs.FileInfo because Info's
 		// methods are pointer-receiver; *Entry does. Retain by copy.
 		keep := o
 		res[keep.Path()] = &keep
 	}
 
-	wg.Wait()
 	if len(errs) > 0 {
 		return res, errors.Join(errs...)
 	}

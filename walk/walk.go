@@ -22,7 +22,7 @@
 package walk
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -42,6 +42,13 @@ import (
 // * each directory encountered bumps up a WaitGroup count (walkState::dirWg).
 // * Some filtering is done when we output via the `.output()` method and
 //   some filtering happens when we process entries from a directory.
+// * traversal errors are folded into the same output channel as normal
+//   entries, packaged as Entry{Err: *walk.Error}. Callers drain one
+//   channel and decide per-entry whether to abort or continue.
+// * cancellation is cooperative via context.Context: workers check
+//   ctx.Err() before each emit and at the top of each directory scan,
+//   so a caller that abandons the walk can terminate it by cancelling
+//   ctx without needing to drain the entry channel.
 
 // Type is an output filter that can be bitwise OR'd. It denotes
 // the types of file system entries that will be *returned* to the caller.
@@ -59,7 +66,8 @@ const (
 )
 
 // Entry is one walk event: a stat'd file system entry plus walk-specific
-// context (currently just the depth relative to the root passed to Walk).
+// context (the depth relative to the root passed to Walk) — or a
+// traversal error carrying the offending path.
 //
 // Roots passed to Walk are at Depth 0. Their direct children are at 1,
 // and so on. Depth survives symlink resolution: a symlink followed to a
@@ -67,7 +75,12 @@ const (
 // not restart counting).
 //
 // fio.Info is embedded by value. All of its methods (Path, Name, Mode,
-// ModTime, IsDir, ...) are therefore directly callable on *Entry.
+// ModTime, IsDir, ...) are directly callable on *Entry when Err is nil.
+//
+// Err carries traversal errors (typed as *walk.Error, which holds the
+// failing Op and Name). When Err != nil the embedded Info is *undefined*:
+// callers MUST check Err first and skip Info-based work. Depth is the
+// best-effort depth at which the error was detected.
 //
 // NOTE: the *Entry pointer delivered to WalkFunc's apply callback and
 // Options.Filter is only valid for the duration of the call. Callers who
@@ -76,6 +89,7 @@ const (
 type Entry struct {
 	fio.Info
 	Depth int
+	Err   error
 }
 
 // Options control the behavior of the filesystem walk.
@@ -112,7 +126,8 @@ type Options struct {
 	// true return also prevents descent into that directory.
 	//
 	// The *Entry is only valid for the duration of the call; copy
-	// the Entry value if you need to retain any of its data.
+	// the Entry value if you need to retain any of its data. Filter
+	// is never invoked for error-entries (Err != nil).
 	Filter func(e *Entry) (bool, error)
 }
 
@@ -125,8 +140,8 @@ type walkItem struct {
 // internal state
 type walkState struct {
 	Options
-	ch    chan walkItem
-	errch chan error
+	ctx context.Context
+	ch  chan walkItem
 
 	// type mask for output filtering
 	typ os.FileMode
@@ -145,8 +160,10 @@ type walkState struct {
 	// return true if we haven't crossed mount point
 	singlefs func(e *Entry) bool
 
-	// the output action - either send entry via chan or call user supplied func
-	apply func(e *Entry)
+	// the output action - either send entry via chan or call user supplied func.
+	// apply handles both normal and error-entries; returns a non-nil error to
+	// signal "stop walking" (cancellation or user-callback error).
+	apply func(e *Entry) error
 
 	// Tracks device major:minor to detect mount-point crossings
 	fs  sync.Map
@@ -182,92 +199,117 @@ func (t Type) String() string {
 }
 
 // Walk traverses the entries in 'names' in a concurrent fashion and returns
-// results in a channel of Entry values. Each Entry carries a stat-filled
-// fio.Info (embedded by value) and the Depth relative to the root that
-// reached it. The caller must service the channel. Any errors encountered
-// during the walk are returned in the error channel.
-func Walk(names []string, opt Options) (chan Entry, chan error) {
+// results on a single channel of Entry values. Each Entry carries a
+// stat-filled fio.Info (embedded by value) and the Depth relative to the
+// root that reached it. Traversal errors are folded into the same channel
+// as entries whose Err field is non-nil (typed as *walk.Error); the
+// embedded Info is undefined in that case. Callers MUST check e.Err
+// before touching Info.
+//
+// The returned channel is closed once the walk completes or ctx is
+// cancelled. Cancelling ctx is the supported way to terminate a walk
+// early without draining the channel.
+func Walk(ctx context.Context, names []string, opt Options) <-chan Entry {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
 
 	out := make(chan Entry, opt.Concurrency)
-	d := newWalkState(opt)
+	d := newWalkState(ctx, opt)
 
-	// This function sends output to a chan
-	d.apply = func(e *Entry) {
-		out <- *e
+	// apply sends entries out. If ctx is cancelled, short-circuit so we
+	// don't block on a channel nobody is reading.
+	d.apply = func(e *Entry) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case out <- *e:
+			return nil
+		}
 	}
 
-	// We need to do the walk in the go-routine and wait until all the work is done.
-	// We have to return the chans rightaway
 	go func() {
 		d.doWalk(names)
 		d.dirWg.Wait()
 		close(d.ch)
-		close(out)
-		close(d.errch)
 		d.wg.Wait()
+		close(out)
 	}()
 
-	return out, d.errch
+	return out
 }
 
-// WalkFunc traverses the entries in 'names' in a concurrent fashion and calls 'apply'
-// for entries that match criteria in 'opt'. The apply function must be concurrency-safe
-// ie it will be called concurrently from multiple go-routines. Any errors reported by
-// 'apply' will be returned from WalkFunc().
+// WalkFunc traverses the entries in 'names' in a concurrent fashion and calls
+// 'apply' for entries that match criteria in 'opt'. The apply function must be
+// concurrency-safe: it will be called concurrently from multiple go-routines.
+//
+// apply is also invoked for traversal error-entries (Err != nil); callbacks
+// MUST check e.Err before touching e.Info. If apply returns a non-nil error
+// the walk short-circuits: no further entries are delivered, and WalkFunc
+// returns that error. A nil return from the callback (even on an
+// error-entry) means "keep going".
 //
 // The *Entry passed to apply is only valid for the duration of the call.
 // If the callback needs to retain any of the entry's data across calls
 // (e.g. to store in a map), it must copy the Entry value itself rather
 // than capturing the pointer.
-func WalkFunc(names []string, opt Options, apply func(e *Entry) error) error {
+func WalkFunc(ctx context.Context, names []string, opt Options, apply func(e *Entry) error) error {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
 
-	d := newWalkState(opt)
+	// Derive a cancellable context so that an apply() error halts
+	// remaining workers without requiring the caller's ctx to be cancelled.
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-	// This calls the caller supplied 'apply' func
-	d.apply = func(e *Entry) {
-		if err := apply(e); err != nil {
-			d.errch <- err
+	d := newWalkState(wctx, opt)
+
+	// First non-nil callback error wins; subsequent errors are dropped.
+	var (
+		cbMu  sync.Mutex
+		cbErr error
+	)
+
+	d.apply = func(e *Entry) error {
+		if err := wctx.Err(); err != nil {
+			return err
 		}
+		if err := apply(e); err != nil {
+			cbMu.Lock()
+			if cbErr == nil {
+				cbErr = err
+			}
+			cbMu.Unlock()
+			cancel()
+			return err
+		}
+		return nil
 	}
 
 	d.doWalk(names)
-
-	// harvest errors and prepare to return
-	var errWg sync.WaitGroup
-	var errs []error
-
-	errWg.Add(1)
-	go func(in chan error) {
-		for e := range in {
-			errs = append(errs, e)
-		}
-		errWg.Done()
-	}(d.errch)
-
-	// close the channels when we're all done
 	d.dirWg.Wait()
 	close(d.ch)
-	close(d.errch)
-	errWg.Wait()
 	d.wg.Wait()
 
-	if len(errs) > 0 {
-		return errors.Join(errs...)
+	cbMu.Lock()
+	err := cbErr
+	cbMu.Unlock()
+	if err != nil {
+		return err
+	}
+	// If the caller's ctx (not just our internal cancel) was done, surface it.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
 	}
 	return nil
 }
 
-func newWalkState(opt Options) *walkState {
+func newWalkState(ctx context.Context, opt Options) *walkState {
 	d := &walkState{
 		Options: opt,
+		ctx:     ctx,
 		ch:      make(chan walkItem, opt.Concurrency),
-		errch:   make(chan error, opt.Concurrency),
 
 		filterName: func(_ string) bool {
 			return false
@@ -313,9 +355,13 @@ func newWalkState(opt Options) *walkState {
 // walk the entries in 'names'; this creates workers to
 // traverse the FS in a concurrent fashion.
 func (d *walkState) doWalk(names []string) {
-	// send work to workers
 	dirs := make([]walkItem, 0, len(names))
 	for i := range names {
+		// observe cancellation promptly between roots
+		if d.ctx.Err() != nil {
+			return
+		}
+
 		nm := strings.TrimSuffix(names[i], "/")
 		if len(nm) == 0 {
 			nm = "/"
@@ -327,7 +373,7 @@ func (d *walkState) doWalk(names []string) {
 
 		e := d.newEntry(0)
 		if err := fio.Lstatm(nm, &e.Info); err != nil {
-			d.error(&Error{"lstat", nm, err})
+			d.sendErr(0, "lstat", nm, err)
 			continue
 		}
 
@@ -338,7 +384,7 @@ func (d *walkState) doWalk(names []string) {
 
 		skip, err := d.Filter(e)
 		if err != nil {
-			d.error(&Error{"filter", nm, err})
+			d.sendErr(0, "filter", nm, err)
 			continue
 		}
 		if skip {
@@ -363,17 +409,22 @@ func (d *walkState) doWalk(names []string) {
 		}
 	}
 
-	// queue the dirs
 	d.enq(dirs)
-
 }
 
 // worker thread to walk directories
 func (d *walkState) worker() {
+	defer d.wg.Done()
 	for it := range d.ch {
+		// honor cancellation before touching the filesystem
+		if d.ctx.Err() != nil {
+			d.dirWg.Done()
+			continue
+		}
+
 		e := d.newEntry(it.depth)
 		if err := fio.Lstatm(it.path, &e.Info); err != nil {
-			d.error(&Error{"lstat-wrk", it.path, err})
+			d.sendErr(it.depth, "lstat-wrk", it.path, err)
 			d.dirWg.Done()
 			continue
 		}
@@ -389,8 +440,6 @@ func (d *walkState) worker() {
 		// We can only decrement this wait-group _after_ walkPath() has returned!
 		d.dirWg.Done()
 	}
-
-	d.wg.Done()
 }
 
 // output action for entries we encounter
@@ -402,8 +451,19 @@ func (d *walkState) output(e *Entry) {
 	//
 	// For everyone else, we can consult the typ map
 	if (d.typ&m) > 0 || ((d.Type&FILE) > 0 && m.IsRegular()) {
-		d.apply(e)
+		_ = d.apply(e)
 	}
+}
+
+// sendErr builds a *walk.Error and emits it as an error-entry on the
+// same channel as normal entries. Depth is the best-effort depth where
+// the error was detected.
+func (d *walkState) sendErr(depth int, op, name string, err error) {
+	ee := &Entry{
+		Depth: depth,
+		Err:   &Error{Op: op, Name: name, Err: err},
+	}
+	_ = d.apply(ee)
 }
 
 // return true iff basename(nm) matches one of the patterns
@@ -412,7 +472,7 @@ func (d *walkState) exclude(nm string) bool {
 	for _, pat := range d.Excludes {
 		ok, err := path.Match(pat, bn)
 		if err != nil {
-			d.error(&Error{"exclude-glob", nm, fmt.Errorf("'%s': %w", pat, err)})
+			d.sendErr(0, "exclude-glob", nm, fmt.Errorf("'%s': %w", pat, err))
 		} else if ok {
 			return true
 		}
@@ -422,16 +482,29 @@ func (d *walkState) exclude(nm string) bool {
 }
 
 // enqueue a list of dirs in a separate go-routine so the caller is
-// not blocked (deadlocked)
+// not blocked (deadlocked).
+//
+// If ctx is cancelled mid-submit we must still release the dirWg tokens
+// that were reserved at entry; otherwise dirWg.Wait() deadlocks.
 func (d *walkState) enq(items []walkItem) {
-	if len(items) > 0 {
-		d.dirWg.Add(len(items))
-		go func(items []walkItem) {
-			for _, it := range items {
-				d.ch <- it
-			}
-		}(items)
+	if len(items) == 0 {
+		return
 	}
+	d.dirWg.Add(len(items))
+	go func(items []walkItem) {
+		for i, it := range items {
+			select {
+			case <-d.ctx.Done():
+				// items[i..] were reserved but will never be submitted;
+				// release their dirWg tokens so the walk can terminate.
+				for j := i; j < len(items); j++ {
+					d.dirWg.Done()
+				}
+				return
+			case d.ch <- it:
+			}
+		}
+	}(items)
 }
 
 // read a dir and return the names
@@ -458,9 +531,18 @@ func readDir(nm string) ([]string, error) {
 // returns. And by then the wait-count would've been bumped up by the number of
 // dirs we've seen here.
 func (d *walkState) walkPath(nm string, depth int) {
+	if d.ctx.Err() != nil {
+		return
+	}
+
 	names, err := readDir(nm)
 	if err != nil {
-		d.error(err)
+		// readDir wraps as *walk.Error; unwrap so sendErr can preserve Op/Name.
+		if we, ok := err.(*Error); ok {
+			d.sendErr(depth, we.Op, we.Name, we.Err)
+		} else {
+			d.sendErr(depth, "readdir", nm, err)
+		}
 		return
 	}
 
@@ -472,6 +554,10 @@ func (d *walkState) walkPath(nm string, depth int) {
 	childDepth := depth + 1
 	dirs := make([]walkItem, 0, len(names)/2)
 	for i := range names {
+		if d.ctx.Err() != nil {
+			return
+		}
+
 		entry := names[i]
 
 		// we don't want to use filepath.Join() because it "cleans"
@@ -484,19 +570,18 @@ func (d *walkState) walkPath(nm string, depth int) {
 
 		e := d.newEntry(childDepth)
 		if err := fio.Lstatm(fp, &e.Info); err != nil {
-			d.error(&Error{"lstat", fp, err})
+			d.sendErr(childDepth, "lstat", fp, err)
 			continue
 		}
 
 		// don't process entries we've already seen
 		if d.isEntrySeen(e) {
-			//fmt.Printf("%s: +dup-inode\n", fp)
 			continue
 		}
 
 		skip, err := d.Filter(e)
 		if err != nil {
-			d.error(&Error{"filter", fp, err})
+			d.sendErr(childDepth, "filter", fp, err)
 			continue
 		}
 		if skip {
@@ -539,7 +624,7 @@ func (d *walkState) doSymlink(e *Entry, dirs []walkItem) []walkItem {
 	nm := e.Path()
 	newnm, err := filepath.EvalSymlinks(nm)
 	if err != nil {
-		d.error(&Error{"symlink", nm, err})
+		d.sendErr(e.Depth, "symlink", nm, err)
 		return dirs
 	}
 	nm = newnm
@@ -548,7 +633,7 @@ func (d *walkState) doSymlink(e *Entry, dirs []walkItem) []walkItem {
 	// e.Depth (the link's own depth) is untouched and is the depth we
 	// report for the resolved target.
 	if err = fio.Statm(nm, &e.Info); err != nil {
-		d.error(&Error{"symlink-stat", nm, err})
+		d.sendErr(e.Depth, "symlink-stat", nm, err)
 		return dirs
 	}
 
@@ -595,11 +680,6 @@ func (d *walkState) isSingleFS(e *Entry) bool {
 		return true
 	}
 	return false
-}
-
-// enq an error
-func (d *walkState) error(err error) {
-	d.errch <- err
 }
 
 // TODO mem pool for entry

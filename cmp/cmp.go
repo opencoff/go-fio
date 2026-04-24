@@ -14,6 +14,7 @@
 package cmp
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -248,7 +249,12 @@ func (d *Difference) String() string {
 // For all entries, it compares every comparable attribute of fio.Info - unless
 // explicitly ignored (by using the option WithIgnore()). The ignorable
 // attributes are identified by IGN_xxx constants.
-func FsTree(src, dst string, opt ...Option) (*Difference, error) {
+//
+// The caller supplies a context.Context; cancelling ctx aborts both
+// concurrent walks promptly. Traversal errors discovered by walk are
+// surfaced as *walk.Error wrapped in *cmp.Error; the first error from
+// either side short-circuits the walk via errgroup.
+func FsTree(ctx context.Context, src, dst string, opt ...Option) (*Difference, error) {
 	lfi, err := fio.Lstat(src)
 	if err != nil {
 		return nil, &Error{"lstat-src", src, dst, err}
@@ -277,8 +283,16 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 	wo := option.Options
 
 	// since we're doing both walks in parallel, we ensure concurrency limits
-	// are honored
+	// are honored. Guard against the half-of-1 == 0 case; walk would then
+	// reset to NumCPU and blow past the caller's cap.
 	wo.Concurrency = wo.Concurrency / 2
+	if wo.Concurrency < 1 {
+		wo.Concurrency = 1
+	}
+
+	// derive a cancellable context so a failure on either side aborts the other
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	var wg sync.WaitGroup
 	var err_L, err_R error
@@ -289,7 +303,10 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 	rhs := fio.NewMap()
 
 	go func(w *sync.WaitGroup) {
-		err := walk.WalkFunc([]string{src}, wo, func(e *walk.Entry) error {
+		err := walk.WalkFunc(wctx, []string{src}, wo, func(e *walk.Entry) error {
+			if e.Err != nil {
+				return e.Err
+			}
 			rel, _ := filepath.Rel(src, e.Path())
 			if rel != "." {
 				// the *Entry is valid only for this call; copy the
@@ -303,12 +320,16 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 		})
 		if err != nil {
 			err_L = &Error{"walk-src", src, dst, err}
+			cancel()
 		}
 		w.Done()
 	}(&wg)
 
 	go func(w *sync.WaitGroup) {
-		err := walk.WalkFunc([]string{dst}, wo, func(e *walk.Entry) error {
+		err := walk.WalkFunc(wctx, []string{dst}, wo, func(e *walk.Entry) error {
+			if e.Err != nil {
+				return e.Err
+			}
 			rel, _ := filepath.Rel(dst, e.Path())
 			if rel != "." {
 				info := e.Info
@@ -319,6 +340,7 @@ func FsTree(src, dst string, opt ...Option) (*Difference, error) {
 		})
 		if err != nil {
 			err_R = &Error{"walk-dst", src, dst, err}
+			cancel()
 		}
 		w.Done()
 	}(&wg)

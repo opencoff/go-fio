@@ -14,6 +14,7 @@
 package clone
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -118,7 +119,9 @@ func defaultOptions() treeopt {
 // Tree clones the directory tree 'src' to 'dst' with options 'opt'.
 // For example, an entry src/a will be cloned to dst/b. If dst
 // exists, it must be a directory.
-func Tree(dst, src string, opt ...Option) error {
+//
+// Cancelling ctx aborts the traversal and any in-flight copies promptly.
+func Tree(ctx context.Context, dst, src string, opt ...Option) error {
 	si, err := fio.Lstat(src)
 	if err != nil {
 		return &Error{"lstat-src", src, dst, err}
@@ -148,7 +151,7 @@ func Tree(dst, src string, opt ...Option) error {
 		fp(&option)
 	}
 
-	diff, err := cmp.FsTree(src, dst, cmp.WithIgnoreAttr(option.fl),
+	diff, err := cmp.FsTree(ctx, src, dst, cmp.WithIgnoreAttr(option.fl),
 		cmp.WithObserver(option.o),
 		cmp.WithWalkOptions(option.Options))
 	if err != nil {

@@ -7,6 +7,7 @@
 package walk
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -69,30 +70,20 @@ func expectedDepths(root string) map[string]int {
 	}
 }
 
-// collect drains Walk and returns path→depth plus the raw Entry list.
+// collect drains Walk and returns path→depth.
 func collect(t *testing.T, roots []string, opt Options) map[string]int {
 	t.Helper()
 	got := make(map[string]int)
-	var mu sync.Mutex
 
-	och, ech := Walk(roots, opt)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
+	och := Walk(context.Background(), roots, opt)
 	var errs []error
-	go func() {
-		for e := range ech {
-			errs = append(errs, e)
-		}
-		wg.Done()
-	}()
-
 	for e := range och {
-		mu.Lock()
+		if e.Err != nil {
+			errs = append(errs, e.Err)
+			continue
+		}
 		got[e.Path()] = e.Depth
-		mu.Unlock()
 	}
-	wg.Wait()
 
 	if len(errs) > 0 {
 		t.Fatalf("unexpected walk errors: %v", errs)
@@ -408,7 +399,10 @@ func TestDepth_WalkFuncMatchesWalk(t *testing.T) {
 
 	viaFunc := make(map[string]int)
 	var mu sync.Mutex
-	err := WalkFunc([]string{root}, Options{Type: ALL}, func(e *Entry) error {
+	err := WalkFunc(context.Background(), []string{root}, Options{Type: ALL}, func(e *Entry) error {
+		if e.Err != nil {
+			return e.Err
+		}
 		mu.Lock()
 		viaFunc[e.Path()] = e.Depth
 		mu.Unlock()

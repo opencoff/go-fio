@@ -3,6 +3,7 @@
 package cmp_test
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/opencoff/go-fio/cmp"
@@ -54,7 +55,7 @@ func (t *expectCmd) Run(env *tr.TestEnv, args []string) error {
 	}
 
 	// now run the difference engine and collect output
-	diff, err := cmp.FsTree(env.Lhs, env.Rhs, cmp.WithWalkOptions(wo))
+	diff, err := cmp.FsTree(context.Background(), env.Lhs, env.Rhs, cmp.WithWalkOptions(wo))
 	if err != nil {
 		return err
 	}

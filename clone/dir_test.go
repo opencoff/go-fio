@@ -14,6 +14,7 @@
 package clone
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -37,7 +38,7 @@ func TestTreeCloneEmpty(t *testing.T) {
 	err = os.MkdirAll(dst, 0700)
 	assert(err == nil, "mkdir dst: %s: %s", dst, err)
 
-	err = Tree(dst, src)
+	err = Tree(context.Background(), dst, src)
 	assert(err == nil, "clone: %s", err)
 
 	// now run a cmp to ensure there are no differences
@@ -67,7 +68,7 @@ func TestTreeCloneBasic(t *testing.T) {
 	err = mkfiles(dst, []string{"a/b"}, 2)
 	assert(err == nil, "mkfiles src: %s", err)
 
-	err = Tree(dst, src)
+	err = Tree(context.Background(), dst, src)
 	assert(err == nil, "clone: %s", err)
 
 	err = treeEq(src, dst, t)
@@ -94,7 +95,7 @@ func TestTreeCloneDiffs(t *testing.T) {
 	err = mkfiles(dst, []string{"a/b", "a/c", "a/d"}, 2)
 	assert(err == nil, "mkfiles src: %s", err)
 
-	err = Tree(dst, src)
+	err = Tree(context.Background(), dst, src)
 	assert(err == nil, "clone: %s", err)
 
 	err = treeEq(src, dst, t)
@@ -132,7 +133,7 @@ func TestTreeCloneHardlinks(t *testing.T) {
 		assert(err == nil, "%s", err)
 	}
 
-	err = Tree(dst, src)
+	err = Tree(context.Background(), dst, src)
 	assert(err == nil, "clone: %s", err)
 
 	err = treeEq(src, dst, t)
@@ -173,7 +174,7 @@ func mkfiles(base string, paths []string, n int) error {
 }
 
 func treeEq(src, dst string, t *testing.T) error {
-	d, err := cmp.FsTree(src, dst)
+	d, err := cmp.FsTree(context.Background(), src, dst)
 	if err != nil {
 		return err
 	}
