@@ -8,9 +8,11 @@ require (
 	github.com/opencoff/go-mmap v0.1.5
 	github.com/opencoff/go-testrunner v0.1.2
 	github.com/pkg/xattr v0.4.10
+	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	golang.org/x/sync v0.10.0
 	golang.org/x/sys v0.31.0
+	google.golang.org/protobuf v1.36.11
 )
 
 require (

@@ -1,0 +1,89 @@
+// fio.proto -- wire-format schema for fio.Info and fio.Xattr.
+//
+// Generated Go code lands in ./internal/pb/ via scripts/gen-proto.sh.
+// Regenerate with:
+//
+//     scripts/gen-proto.sh proto/fio.proto
+//
+// Field-number reservation policy:
+//   1..16   in use today; 1-byte tag; never renumber.
+//   17..31  reserved for future stat(2)-ish additions (birthtime,
+//           st_flags, inode generation, encryption flags, ...).
+//           Still 1-byte tag.
+//   32..127 1-byte tag but repurposing needs a compat bump.
+//   128+    2-byte tag; use for rarely-set optional blobs.
+//
+// Always emit `reserved` ranges for anything we remove. Never
+// reuse a number.
+
+syntax = "proto3";
+
+package opencoff.fio.v1;
+
+option go_package = "github.com/opencoff/go-fio/internal/pb";
+
+// Wire-format metadata for a file-system entry (mirrors fio.Info).
+//
+// Field names are chosen to match the exported Go field names of
+// fio.Info where we want protobuf field promotion (via struct
+// embedding) to expose them directly: Ino, Siz, Dev, Rdev, Mod,
+// Uid, Gid, Nlink, Path.
+//
+// Fields that need type translation on the fio.Info side
+// (time.Time, xattr map) get distinct names (AtimUnixNano,
+// Entries) so they don't shadow the Go-native fields on the
+// outer struct.
+message Info {
+  // Identity.
+  uint64 ino  = 1;
+  uint64 dev  = 2;
+  uint64 rdev = 3;
+
+  // Content size. int64 matches Go; sparse files may legitimately
+  // be large but never negative.
+  int64 siz = 4;
+
+  // Go's fs.FileMode bits captured verbatim. The high bits carry
+  // Go-specific meaning (ModeDir, ModeSymlink, ModeIrregular, ...);
+  // a non-Go consumer decoding this field must re-interpret.
+  uint32 mod = 5;
+
+  // Ownership.
+  uint32 uid   = 6;
+  uint32 gid   = 7;
+  uint32 nlink = 8;
+
+  // Times — signed nanoseconds since Unix epoch. Signed so
+  // pre-1970 values survive (the old enctime cast to uint64
+  // silently corrupted them). Range ±292 years covers any
+  // timestamp a kernel will issue.
+  int64 atim_unix_nano = 9;
+  int64 mtim_unix_nano = 10;
+  int64 ctim_unix_nano = 11;
+
+  // File path. The JunkPath MarshalFlag strips to basename in
+  // the converter before this field is populated.
+  string path = 12;
+
+  // Extended attributes. `bytes` (not `string`): proto3 string
+  // must be valid UTF-8, but raw xattr payloads (e.g. POSIX ACL
+  // blobs, security.capability) are arbitrary octet sequences.
+  //
+  // Name: entries (not xattr) so the outer fio.Info.Xattr map
+  // field doesn't collide with field promotion.
+  //
+  // Deterministic ordering: the converter sorts entries by key
+  // before marshaling so the marshaled bytes are stable across
+  // runs — required for content-addressed storage / hash
+  // comparisons.
+  repeated XattrEntry entries = 13;
+
+  // Reserved for future stat-like additions.
+  reserved 14 to 31;
+  reserved "birthtime_unix_nano", "flags", "generation";
+}
+
+message XattrEntry {
+  string key   = 1;
+  bytes  value = 2;
+}
