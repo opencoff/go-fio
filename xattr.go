@@ -93,11 +93,18 @@ func LgetXattr(nm string) (Xattr, error) {
 // required to write any privileged-namespace keys (trusted.*,
 // security.*); a missing capability surfaces as
 // ErrXattrCapabilityMissing before we hit the kernel's EPERM.
+//
+// Platform-reserved keys that cannot round-trip via setxattr
+// (currently darwin's com.apple.system.Security) are silently
+// skipped - use acl_*(3) for those.
 func SetXattr(nm string, x Xattr) error {
 	if err := checkXattrCapabilities(x); err != nil {
 		return err
 	}
 	for k, v := range x {
+		if isFilteredXattr(k) {
+			continue
+		}
 		if err := xattr.Set(nm, k, []byte(v)); err != nil {
 			return wrapUnsupported(err)
 		}
@@ -110,12 +117,16 @@ func SetXattr(nm string, x Xattr) error {
 // extended attributes of the symlink and *not* the target.
 // Errors caused by a filesystem that does not support extended
 // attributes are wrapped as ErrXattrUnsupported; missing Linux
-// capabilities surface as ErrXattrCapabilityMissing.
+// capabilities surface as ErrXattrCapabilityMissing. Platform-
+// reserved keys (darwin's com.apple.system.Security) are skipped.
 func LsetXattr(nm string, x Xattr) error {
 	if err := checkXattrCapabilities(x); err != nil {
 		return err
 	}
 	for k, v := range x {
+		if isFilteredXattr(k) {
+			continue
+		}
 		if err := xattr.LSet(nm, k, []byte(v)); err != nil {
 			return wrapUnsupported(err)
 		}
@@ -189,6 +200,7 @@ func fetch(nm string, list func(nm string) ([]string, error),
 	if err != nil {
 		return nil, wrapUnsupported(err)
 	}
+	keys = filterKeys(keys)
 
 	x := make(Xattr)
 	for _, k := range keys {
@@ -212,6 +224,7 @@ func clear(nm string, list func(nm string) ([]string, error),
 	if err != nil {
 		return wrapUnsupported(err)
 	}
+	keys = filterKeys(keys)
 
 	for _, k := range keys {
 		if err := del(nm, k); err != nil {
@@ -241,6 +254,9 @@ func repl(nm string, x Xattr, list func(nm string) ([]string, error),
 	}
 
 	for k, v := range x {
+		if isFilteredXattr(k) {
+			continue
+		}
 		if err := set(nm, k, []byte(v)); err != nil {
 			return wrapUnsupported(err)
 		}
