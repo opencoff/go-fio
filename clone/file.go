@@ -141,11 +141,20 @@ func copyRegular(dst string, s *os.File, fi *fio.Info) error {
 type cloner func(dst string, src *fio.Info) error
 
 // all fs entries will have these attrs cloned.
-// We stack mtime update to the end.
+//
+// Order matters. On Linux, writing system.posix_acl_access via
+// setxattr *side-effects* the file's mode group bits to match the
+// ACL mask. If chmod ran AFTER the xattr write it would clobber the
+// ACL-implied bits, leaving on-disk mode inconsistent with the ACL.
+// POSIX convention (matched by cp -a, rsync -A, GNU coreutils) is:
+//   1. chown  -- set ownership first; chmod and ACLs reference the uid/gid
+//   2. chmod  -- base mode bits
+//   3. xattr  -- including system.posix_acl_access which refines mode
+//   4. times  -- last, since mode/xattr writes bump ctime
 var mdUpdaters = []cloner{
-	clonexattr,
 	cloneugid,
 	clonemode,
+	clonexattr,
 	clonetimes,
 }
 
