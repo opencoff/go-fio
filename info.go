@@ -13,6 +13,8 @@
 // warranty; it is provided "as is". No claim is made to its
 // suitability for any purpose.
 
+//go:generate ./scripts/gen-proto.sh proto/*.proto
+
 package fio
 
 import (
