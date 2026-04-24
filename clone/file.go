@@ -14,6 +14,7 @@
 package clone
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -21,6 +22,17 @@ import (
 
 	"github.com/opencoff/go-fio"
 )
+
+// metaOpt tunes the metadata-restore pipeline. Internal type; public
+// entry points use the zero value (strict), dircloner plumbs its own
+// options (e.g. WithIgnoreUnsupported).
+type metaOpt struct {
+	// ignoreUnsupported causes errors wrapping fio.ErrXattrUnsupported
+	// to be skipped (the remaining cloners run). Used for clones onto
+	// filesystems that cannot hold extended attributes (FAT, tmpfs
+	// without user_xattr, NFS without attr option, etc).
+	ignoreUnsupported bool
+}
 
 // CloneMetadata clones all the metadata from src to dst: the metadata
 // is atime, mtime, uid, gid, mode/perm, xattr
@@ -30,14 +42,14 @@ func Metadata(dst, src string) error {
 		return &Error{"stat-src", src, dst, err}
 	}
 
-	return updateMeta(dst, fi)
+	return updateMeta(dst, fi, metaOpt{})
 }
 
 // UpdateMetadata writes new metadata of 'dst' from 'fi'
 // The metadata that will be updated includes atime, mtime, uid/gid,
 // mode/perm, xattr
 func UpdateMetadata(dst string, fi *fio.Info) error {
-	return updateMeta(dst, fi)
+	return updateMeta(dst, fi, metaOpt{})
 }
 
 // File clones src to dst - including all clonable file attributes
@@ -45,6 +57,13 @@ func UpdateMetadata(dst string, fi *fio.Info) error {
 // by the OS and Filesystem. It will fall back to using copy via mmap(2) on
 // systems that don't have CoW semantics.
 func File(dst, src string) error {
+	return fileWith(dst, src, metaOpt{})
+}
+
+// fileWith is the internal variant of File parameterized by metaOpt.
+// Used by dircloner.xcopy to plumb WithIgnoreUnsupported down to the
+// metadata-restore step.
+func fileWith(dst, src string, opt metaOpt) error {
 	fi, err := fio.Lstat(src)
 	if err != nil {
 		return &Error{"stat-src", src, dst, err}
@@ -89,7 +108,7 @@ func File(dst, src string) error {
 	}
 
 done:
-	return updateMeta(dst, fi)
+	return updateMeta(dst, fi, opt)
 }
 
 // copy a regular file to another regular file
@@ -168,9 +187,16 @@ func clonemode(dst string, fi *fio.Info) error {
 	return nil
 }
 
-func updateMeta(dst string, fi *fio.Info) error {
+func updateMeta(dst string, fi *fio.Info, opt metaOpt) error {
 	for _, fp := range mdUpdaters {
 		if err := fp(dst, fi); err != nil {
+			// xattr failures on filesystems that do not support
+			// extended attributes are downgraded to "skip this
+			// cloner, keep going" when the caller opts in. The
+			// chown / chmod / times steps still run.
+			if opt.ignoreUnsupported && errors.Is(err, fio.ErrXattrUnsupported) {
+				continue
+			}
 			return &Error{"md-update", fi.Path(), dst, err}
 		}
 	}

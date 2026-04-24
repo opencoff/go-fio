@@ -92,6 +92,18 @@ func WithIgnoreMissing(ign bool) Option {
 	}
 }
 
+// WithIgnoreUnsupported causes the clone to silently skip xattr
+// operations that fail with ErrXattrUnsupported (e.g. the destination
+// filesystem does not support extended attributes). Other metadata
+// (chown / chmod / times) still applies. Without this option, a
+// cross-FS clone onto FAT / tmpfs-without-user_xattr / NFS-without-attr
+// aborts on the first affected file.
+func WithIgnoreUnsupported(ign bool) Option {
+	return func(o *treeopt) {
+		o.ignoreUnsupported = ign
+	}
+}
+
 type treeopt struct {
 	walk.Options
 
@@ -100,6 +112,9 @@ type treeopt struct {
 
 	// skip files that disappeared
 	ignoreMissing bool
+
+	// skip xattr operations that fail with ErrXattrUnsupported
+	ignoreUnsupported bool
 
 	// file attrs to ignore while computing
 	// file equality.
@@ -199,7 +214,8 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 }
 
 func (cc *dircloner) xcopy(dst, src string) error {
-	if err := File(dst, src); err != nil {
+	opt := metaOpt{ignoreUnsupported: cc.ignoreUnsupported}
+	if err := fileWith(dst, src, opt); err != nil {
 		if cc.ignoreMissing && errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
@@ -351,7 +367,7 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 			continue
 		}
 
-		if err := updateMeta(p, fi); err != nil {
+		if err := updateMeta(p, fi, metaOpt{ignoreUnsupported: cc.ignoreUnsupported}); err != nil {
 			errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
 			continue
 		}

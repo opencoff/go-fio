@@ -5,6 +5,7 @@ package fio
 
 import (
 	"errors"
+	"syscall"
 	"testing"
 )
 
@@ -134,6 +135,66 @@ func TestClearPropagatesOtherDelError(t *testing.T) {
 	}
 	if err := clear("/x", list, del); !errors.Is(err, errBoom) {
 		t.Fatalf("clear: expected err wrapping %v, got %v", errBoom, err)
+	}
+}
+
+// TestWrapUnsupportedENOTSUP verifies ENOTSUP is wrapped as
+// ErrXattrUnsupported so callers can detect cross-FS clones onto
+// filesystems without xattr support.
+func TestWrapUnsupportedENOTSUP(t *testing.T) {
+	got := wrapUnsupported(syscall.ENOTSUP)
+	if got == nil {
+		t.Fatalf("wrapUnsupported(ENOTSUP) = nil, want non-nil")
+	}
+	if !errors.Is(got, ErrXattrUnsupported) {
+		t.Errorf("wrapUnsupported(ENOTSUP) not errors.Is ErrXattrUnsupported: %v", got)
+	}
+	if !errors.Is(got, syscall.ENOTSUP) {
+		t.Errorf("wrapUnsupported(ENOTSUP) lost the wrapped errno: %v", got)
+	}
+}
+
+// TestWrapUnsupportedEOPNOTSUPP is the same predicate for the
+// POSIX-spelled twin (some kernels surface one vs the other).
+func TestWrapUnsupportedEOPNOTSUPP(t *testing.T) {
+	got := wrapUnsupported(syscall.EOPNOTSUPP)
+	if !errors.Is(got, ErrXattrUnsupported) {
+		t.Errorf("wrapUnsupported(EOPNOTSUPP) not errors.Is ErrXattrUnsupported: %v", got)
+	}
+}
+
+// TestWrapUnsupportedPassthrough ensures unrelated errors are NOT
+// tagged. A caller using errors.Is(err, ErrXattrUnsupported) must
+// not false-positive on EACCES, EPERM, etc.
+func TestWrapUnsupportedPassthrough(t *testing.T) {
+	cases := []error{
+		nil,
+		syscall.EACCES,
+		syscall.EPERM,
+		syscall.EIO,
+		errors.New("random"),
+	}
+	for _, in := range cases {
+		got := wrapUnsupported(in)
+		if errors.Is(got, ErrXattrUnsupported) {
+			t.Errorf("wrapUnsupported(%v) wrongly tagged as ErrXattrUnsupported", in)
+		}
+	}
+}
+
+// TestFetchWrapsUnsupported verifies that an ENOTSUP from list() in
+// the fetch path is surfaced as ErrXattrUnsupported.
+func TestFetchWrapsUnsupported(t *testing.T) {
+	list := func(nm string) ([]string, error) {
+		return nil, syscall.ENOTSUP
+	}
+	get := func(nm, key string) ([]byte, error) {
+		return nil, nil
+	}
+
+	_, err := fetch("/x", list, get)
+	if !errors.Is(err, ErrXattrUnsupported) {
+		t.Fatalf("fetch: expected ErrXattrUnsupported, got %v", err)
 	}
 }
 

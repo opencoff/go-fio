@@ -50,3 +50,10 @@ func (e *CopyError) Unwrap() error {
 }
 
 var _ error = &CopyError{}
+
+// ErrXattrUnsupported is returned (wrapped) from xattr operations
+// when the target filesystem does not support extended attributes
+// (the kernel reports ENOTSUP / EOPNOTSUPP). Callers that want to
+// treat this as a non-fatal condition use errors.Is to detect it
+// and downgrade to a skip - see clone.WithIgnoreUnsupported.
+var ErrXattrUnsupported = errors.New("xattr: filesystem does not support extended attributes")

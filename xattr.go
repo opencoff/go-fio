@@ -14,11 +14,31 @@
 package fio
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"syscall"
 
 	"github.com/pkg/xattr"
 )
+
+// wrapUnsupported tags an ENOTSUP/EOPNOTSUPP error coming out of the
+// xattr subsystem as ErrXattrUnsupported so callers that clone onto
+// filesystems without xattr support (FAT, tmpfs w/o user_xattr, NFS
+// without attr option, etc.) can detect and downgrade via
+// errors.Is(err, fio.ErrXattrUnsupported). Other errors pass through.
+func wrapUnsupported(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) {
+		// double-%w preserves both the sentinel and the underlying
+		// syscall.Errno in the error chain, so callers can errors.Is
+		// either one.
+		return fmt.Errorf("%w: %w", ErrXattrUnsupported, err)
+	}
+	return err
+}
 
 // Xattr is a collection of all the extended attributes of a given file
 type Xattr map[string]string
@@ -67,10 +87,12 @@ func LgetXattr(nm string) (Xattr, error) {
 }
 
 // SetXattr sets/updates the xattr list for a given file.
+// Errors caused by a filesystem that does not support extended
+// attributes are wrapped as ErrXattrUnsupported.
 func SetXattr(nm string, x Xattr) error {
 	for k, v := range x {
 		if err := xattr.Set(nm, k, []byte(v)); err != nil {
-			return err
+			return wrapUnsupported(err)
 		}
 	}
 	return nil
@@ -79,10 +101,12 @@ func SetXattr(nm string, x Xattr) error {
 // LSetXattr sets/updates the xattr list for a given file.
 // If 'nm' points to a symlink, LSetXattr will set/update the
 // extended attributes of the symlink and *not* the target.
+// Errors caused by a filesystem that does not support extended
+// attributes are wrapped as ErrXattrUnsupported.
 func LsetXattr(nm string, x Xattr) error {
 	for k, v := range x {
 		if err := xattr.LSet(nm, k, []byte(v)); err != nil {
-			return err
+			return wrapUnsupported(err)
 		}
 	}
 	return nil
@@ -105,10 +129,12 @@ func LreplaceXattr(nm string, x Xattr) error {
 }
 
 // DelXattr deletes one or more extended attributes of a file.
+// Errors from an xattr-less filesystem are wrapped as
+// ErrXattrUnsupported.
 func DelXattr(nm string, keys ...string) error {
 	for _, k := range keys {
 		if err := xattr.Remove(nm, k); err != nil {
-			return err
+			return wrapUnsupported(err)
 		}
 	}
 	return nil
@@ -117,10 +143,12 @@ func DelXattr(nm string, keys ...string) error {
 // LDelXattr deletes one or more extended attributes of a file.
 // If 'nm' points to a symlink, LSetXattr will delete the
 // extended attributes of the symlink and *not* the target.
+// Errors from an xattr-less filesystem are wrapped as
+// ErrXattrUnsupported.
 func LdelXattr(nm string, keys ...string) error {
 	for _, k := range keys {
 		if err := xattr.LRemove(nm, k); err != nil {
-			return err
+			return wrapUnsupported(err)
 		}
 	}
 	return nil
@@ -148,7 +176,7 @@ func fetch(nm string, list func(nm string) ([]string, error),
 	get func(nm string, k string) ([]byte, error)) (Xattr, error) {
 	keys, err := list(nm)
 	if err != nil {
-		return nil, err
+		return nil, wrapUnsupported(err)
 	}
 
 	x := make(Xattr)
@@ -158,7 +186,7 @@ func fetch(nm string, list func(nm string) ([]string, error),
 			if isXattrNotFound(err) {
 				continue
 			}
-			return nil, err
+			return nil, wrapUnsupported(err)
 		}
 		x[k] = string(b)
 	}
@@ -171,7 +199,7 @@ func clear(nm string, list func(nm string) ([]string, error),
 	del func(nm, key string) error) error {
 	keys, err := list(nm)
 	if err != nil {
-		return err
+		return wrapUnsupported(err)
 	}
 
 	for _, k := range keys {
@@ -179,7 +207,7 @@ func clear(nm string, list func(nm string) ([]string, error),
 			if isXattrNotFound(err) {
 				continue
 			}
-			return err
+			return wrapUnsupported(err)
 		}
 	}
 	return nil
@@ -196,7 +224,7 @@ func repl(nm string, x Xattr, list func(nm string) ([]string, error),
 
 	for k, v := range x {
 		if err := set(nm, k, []byte(v)); err != nil {
-			return err
+			return wrapUnsupported(err)
 		}
 	}
 	return nil
