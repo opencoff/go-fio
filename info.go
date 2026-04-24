@@ -18,15 +18,24 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"syscall"
 	"time"
+
+	"github.com/opencoff/go-fio/internal/pb"
 )
 
-// Info represents a file/dir metadata in a normalized form
+// Info represents a file/dir metadata in a normalized form.
 // It satisfies the fs.FileInfo interface and notably supports
 // extended file system attributes (`xattr(7)`). This type
 // can also be safely marshaled and unmarshaled into a portable
-// byte stream.
+// byte stream via proto+vtproto under the hood.
+//
+// The struct layout intentionally mirrors the pre-proto era so
+// callers keep their struct-literal idioms (`&fio.Info{Mod: x}`)
+// and zero-value construction works without ceremony. A local
+// pb.Info is allocated inside Marshal/Unmarshal for the wire
+// encoding; none of that surfaces to callers.
 type Info struct {
 	Ino  uint64
 	Siz  int64
@@ -45,15 +54,6 @@ type Info struct {
 	path  string
 	Xattr Xattr
 }
-
-const (
-	// The encoded size of the fixed-width elements of Info
-	// 1b for marhsal version
-	// 8b for each time field x 3
-	// 4b for each of uint32 x 3
-	// 8b for each uint64 x 4
-	_FixedEncodingSize int = 1 + (3 * 8) + (4 * 4) + (4 * 8)
-)
 
 var _ fs.FileInfo = &Info{}
 
@@ -179,7 +179,7 @@ func (ii *Info) Size() int64 {
 
 // Mode returns the file mode bits
 func (ii *Info) Mode() fs.FileMode {
-	return fs.FileMode(ii.Mod)
+	return ii.Mod
 }
 
 // ModTime returns the file modification time
@@ -217,4 +217,124 @@ func (ii *Info) Sys() any {
 func ts2time(a syscall.Timespec) time.Time {
 	t := time.Unix(a.Sec, a.Nsec)
 	return t
+}
+
+// MarshalFlag tunes the marshaling of an Info.
+type MarshalFlag uint32
+
+const (
+	// JunkPath strips Path() to its basename before marshaling.
+	// Useful when the caller wants to serialize metadata without
+	// leaking the full directory hierarchy.
+	JunkPath MarshalFlag = 1 << iota
+)
+
+// MarshalSize returns the number of bytes Marshal / MarshalTo will
+// write for this Info under the given flag.
+func (ii *Info) MarshalSize(flag MarshalFlag) int {
+	p := ii.toProto(flag)
+	return p.SizeVT()
+}
+
+// Marshal allocates a correctly-sized buffer, marshals ii into it,
+// and returns it.
+func (ii *Info) Marshal(flag MarshalFlag) ([]byte, error) {
+	p := ii.toProto(flag)
+	return p.MarshalVT()
+}
+
+// MarshalTo marshals ii into the caller-supplied buffer, returning
+// the number of bytes written. The buffer must be at least
+// MarshalSize bytes.
+func (ii *Info) MarshalTo(b []byte, flag MarshalFlag) (int, error) {
+	p := ii.toProto(flag)
+	sz := p.SizeVT()
+	if len(b) < sz {
+		return 0, fmt.Errorf("marshal: buf: %w", ErrTooSmall)
+	}
+	// MarshalToSizedBufferVT fills from the tail back to the head
+	// of a buffer sized exactly to SizeVT; the final bytes land at
+	// offset 0.
+	if _, err := p.MarshalToSizedBufferVT(b[:sz]); err != nil {
+		return 0, err
+	}
+	return sz, nil
+}
+
+// Unmarshal decodes a byte stream previously produced by Marshal /
+// MarshalTo. Returns the number of bytes consumed.
+func (ii *Info) Unmarshal(b []byte) (int, error) {
+	var p pb.Info
+	if err := p.UnmarshalVT(b); err != nil {
+		return 0, err
+	}
+	ii.fromProto(&p)
+	return len(b), nil
+}
+
+// toProto copies ii's fields into a local pb.Info. The pb.Info is
+// a stack-allocatable wire-format carrier; we never let it leak
+// into the public API.
+//
+// The xattr map is serialized into a sorted []*XattrEntry so
+// identical Info values (regardless of map insertion order)
+// produce byte-identical marshaled output.
+func (ii *Info) toProto(flag MarshalFlag) *pb.Info {
+	path := ii.path
+	if flag&JunkPath != 0 {
+		path = filepath.Base(path)
+	}
+
+	p := &pb.Info{
+		Ino:          ii.Ino,
+		Siz:          ii.Siz,
+		Dev:          ii.Dev,
+		Rdev:         ii.Rdev,
+		Mod:          uint32(ii.Mod),
+		Uid:          ii.Uid,
+		Gid:          ii.Gid,
+		Nlink:        ii.Nlink,
+		AtimUnixNano: ii.Atim.UnixNano(),
+		MtimUnixNano: ii.Mtim.UnixNano(),
+		CtimUnixNano: ii.Ctim.UnixNano(),
+		Path:         path,
+	}
+
+	if n := len(ii.Xattr); n > 0 {
+		keys := make([]string, 0, n)
+		for k := range ii.Xattr {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		p.Entries = make([]*pb.XattrEntry, 0, n)
+		for _, k := range keys {
+			p.Entries = append(p.Entries, &pb.XattrEntry{
+				Key:   k,
+				Value: []byte(ii.Xattr[k]),
+			})
+		}
+	}
+
+	return p
+}
+
+// fromProto copies a decoded pb.Info back into ii's Go-native fields.
+func (ii *Info) fromProto(p *pb.Info) {
+	ii.Ino = p.Ino
+	ii.Siz = p.Siz
+	ii.Dev = p.Dev
+	ii.Rdev = p.Rdev
+	ii.Mod = fs.FileMode(p.Mod)
+	ii.Uid = p.Uid
+	ii.Gid = p.Gid
+	ii.Nlink = p.Nlink
+	ii.Atim = time.Unix(0, p.AtimUnixNano)
+	ii.Mtim = time.Unix(0, p.MtimUnixNano)
+	ii.Ctim = time.Unix(0, p.CtimUnixNano)
+	ii.path = p.Path
+
+	ii.Xattr = make(Xattr, len(p.Entries))
+	for _, e := range p.Entries {
+		ii.Xattr[e.Key] = string(e.Value)
+	}
 }

@@ -72,3 +72,9 @@ var ErrXattrUnsupported = errors.New("xattr: filesystem does not support extende
 // skippable since the clone cannot succeed with the current
 // privileges.
 var ErrXattrCapabilityMissing = errors.New("xattr: required capability not held")
+
+// ErrTooSmall is returned when a caller-supplied buffer cannot hold
+// the encoded form of a value. Retained for backwards compatibility
+// with the pre-proto marshaler's sentinel; callers should prefer
+// errors.Is over string comparison.
+var ErrTooSmall = errors.New("buffer is not big enough")
