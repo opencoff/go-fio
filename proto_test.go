@@ -1,6 +1,18 @@
-// proto_test.go -- round-trip and edge-case tests for the proto-backed
-// fio.Info marshaler. Replaces the v1 marshal_test.go that was deleted
-// along with info_marshal.go / xattr_marshal.go / encdec.go.
+// proto_test.go -- round-trip and edge-case tests for the proto
+// fio.Info marshaler.
+//
+// SPDX-License-Identifier: GPL-2.0
+//
+// (c) 2026 Sudhi Herle <sudhi@herle.net>
+//
+// Licensing Terms: GPLv2
+//
+// If you need a commercial license for this work, please contact
+// the author.
+//
+// This software does not come with any express or implied
+// warranty; it is provided "as is". No claim is made to its
+// suitability for any purpose.
 
 package fio
 
@@ -76,11 +88,9 @@ func TestProtoScalarRoundTrip(t *testing.T) {
 	}
 }
 
-// TestProtoTimeRoundTrip proves the pre-1970 corruption bug from
-// the v1 marshaler is fixed. enctime cast t.Unix() to uint64,
-// wrapping negative values to enormous positives. The proto
-// migration uses signed int64 nanoseconds, so pre-epoch times
-// survive.
+// TestProtoTimeRoundTrip asserts signed-nanosecond timestamps
+// round-trip for any era, including pre-1970. The proto schema
+// uses int64 nanoseconds so negative values survive.
 func TestProtoTimeRoundTrip(t *testing.T) {
 	cases := []time.Time{
 		time.Unix(0, 0),                            // epoch

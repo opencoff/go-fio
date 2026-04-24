@@ -1,5 +1,7 @@
 // errors.go - descriptive errors for fio
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2
@@ -73,8 +75,6 @@ var ErrXattrUnsupported = errors.New("xattr: filesystem does not support extende
 // privileges.
 var ErrXattrCapabilityMissing = errors.New("xattr: required capability not held")
 
-// ErrTooSmall is returned when a caller-supplied buffer cannot hold
-// the encoded form of a value. Retained for backwards compatibility
-// with the pre-proto marshaler's sentinel; callers should prefer
-// errors.Is over string comparison.
+// ErrTooSmall is returned when a caller-supplied buffer cannot
+// hold the encoded form of a value. Detect with errors.Is.
 var ErrTooSmall = errors.New("buffer is not big enough")

@@ -1,5 +1,7 @@
 // testutil_linux.go -- linux-only test helpers.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

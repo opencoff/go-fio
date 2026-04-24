@@ -1,5 +1,7 @@
 // clone.go - clone a file entry (file|dir|special)
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

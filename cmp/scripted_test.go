@@ -1,5 +1,7 @@
 // scripted_test.go -- script driven clone & cmp dir tests
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2024- Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

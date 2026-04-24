@@ -1,5 +1,7 @@
 // xattr.go - extended attribute support
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2023- Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

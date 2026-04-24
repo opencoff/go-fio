@@ -2,10 +2,22 @@
 //
 // The cloner records which dst dirs had entries added or removed so
 // that fixup() can restore their mtimes from the source after the
-// copy/delete passes finish. Pre-fix, doDel recorded the GRANDPARENT
-// of a deleted entry instead of the parent; these tests pin the
-// invariant and would fail if the off-by-one Dir() is ever
-// reintroduced.
+// copy/delete passes finish. doDel MUST record the parent directory
+// of a deleted entry (not the grandparent); these tests pin that
+// invariant and fail if an off-by-one Dir() creeps back in.
+//
+// SPDX-License-Identifier: GPL-2.0
+//
+// (c) 2026 Sudhi Herle <sudhi@herle.net>
+//
+// Licensing Terms: GPLv2
+//
+// If you need a commercial license for this work, please contact
+// the author.
+//
+// This software does not come with any express or implied
+// warranty; it is provided "as is". No claim is made to its
+// suitability for any purpose.
 
 package clone
 
@@ -27,11 +39,9 @@ func newTrackTestCloner() *dircloner {
 	}
 }
 
-// TestDoDelTracksParent is the direct proof-of-fix for the
-// grandparent bug: deleting /.../a/b/c must mark /.../a/b (the
-// parent) as modified, and must NOT mark /.../a (the grandparent)
-// by itself. Under the pre-fix code the opposite held - parent
-// missing, grandparent present.
+// TestDoDelTracksParent asserts the invariant: deleting /.../a/b/c
+// marks /.../a/b (the parent) as modified and does NOT mark /.../a
+// (the grandparent) by itself.
 func TestDoDelTracksParent(t *testing.T) {
 	root := t.TempDir()
 	parent := filepath.Join(root, "a", "b")
@@ -52,13 +62,13 @@ func TestDoDelTracksParent(t *testing.T) {
 
 	// Parent must be tracked.
 	if _, ok := cc.dirs.Load(parent); !ok {
-		t.Errorf("parent %q not tracked; pre-fix behavior would skip it", parent)
+		t.Errorf("parent %q not tracked", parent)
 	}
 
-	// Grandparent must NOT be tracked. Under the pre-fix code it
-	// would have been - that was the bug.
+	// Grandparent must NOT be tracked by itself - an off-by-one
+	// Dir() would have stored it instead of the parent.
 	if _, ok := cc.dirs.Load(grandparent); ok {
-		t.Errorf("grandparent %q tracked; indicates the off-by-one Dir() regressed", grandparent)
+		t.Errorf("grandparent %q tracked; indicates an off-by-one Dir() regression", grandparent)
 	}
 }
 

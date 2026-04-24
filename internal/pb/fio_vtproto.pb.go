@@ -67,18 +67,18 @@ func (m *Info) MarshalToSizedBufferVT(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x62
 	}
-	if m.CtimUnixNano != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.CtimUnixNano))
+	if m.Ctim != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Ctim))
 		i--
 		dAtA[i] = 0x58
 	}
-	if m.MtimUnixNano != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.MtimUnixNano))
+	if m.Mtim != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Mtim))
 		i--
 		dAtA[i] = 0x50
 	}
-	if m.AtimUnixNano != 0 {
-		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.AtimUnixNano))
+	if m.Atim != 0 {
+		i = protohelpers.EncodeVarint(dAtA, i, uint64(m.Atim))
 		i--
 		dAtA[i] = 0x48
 	}
@@ -202,14 +202,14 @@ func (m *Info) SizeVT() (n int) {
 	if m.Nlink != 0 {
 		n += 1 + protohelpers.SizeOfVarint(uint64(m.Nlink))
 	}
-	if m.AtimUnixNano != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.AtimUnixNano))
+	if m.Atim != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Atim))
 	}
-	if m.MtimUnixNano != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.MtimUnixNano))
+	if m.Mtim != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Mtim))
 	}
-	if m.CtimUnixNano != 0 {
-		n += 1 + protohelpers.SizeOfVarint(uint64(m.CtimUnixNano))
+	if m.Ctim != 0 {
+		n += 1 + protohelpers.SizeOfVarint(uint64(m.Ctim))
 	}
 	l = len(m.Path)
 	if l > 0 {
@@ -426,9 +426,9 @@ func (m *Info) UnmarshalVT(dAtA []byte) error {
 			}
 		case 9:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field AtimUnixNano", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Atim", wireType)
 			}
-			m.AtimUnixNano = 0
+			m.Atim = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return protohelpers.ErrIntOverflow
@@ -438,16 +438,16 @@ func (m *Info) UnmarshalVT(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.AtimUnixNano |= int64(b&0x7F) << shift
+				m.Atim |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
 		case 10:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field MtimUnixNano", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Mtim", wireType)
 			}
-			m.MtimUnixNano = 0
+			m.Mtim = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return protohelpers.ErrIntOverflow
@@ -457,16 +457,16 @@ func (m *Info) UnmarshalVT(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.MtimUnixNano |= int64(b&0x7F) << shift
+				m.Mtim |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
 		case 11:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field CtimUnixNano", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Ctim", wireType)
 			}
-			m.CtimUnixNano = 0
+			m.Ctim = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return protohelpers.ErrIntOverflow
@@ -476,7 +476,7 @@ func (m *Info) UnmarshalVT(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.CtimUnixNano |= int64(b&0x7F) << shift
+				m.Ctim |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

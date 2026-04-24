@@ -1,5 +1,7 @@
 // lchmod_bsd.go -- lchmod via fchmodat(AT_SYMLINK_NOFOLLOW) on BSDs and darwin
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

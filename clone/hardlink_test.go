@@ -1,5 +1,7 @@
 // hardlink_test.go -- tests for the hardlinker tracker
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

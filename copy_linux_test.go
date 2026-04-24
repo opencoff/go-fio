@@ -1,5 +1,7 @@
 // copy_linux_test.go - linux-specific file copy tests
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2021 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

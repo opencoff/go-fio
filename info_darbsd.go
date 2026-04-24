@@ -1,5 +1,7 @@
 // info_darbsd.go - syscall.Stat_t to Info for darwin and freebsd
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2024- Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

@@ -1,7 +1,20 @@
 // clonemode_symlink_test.go -- verifies clonemode does not chmod a
-// symlink's target. This is the Chunk 5 regression: os.Chmod follows
-// symlinks, so the old implementation would alter the target's
-// permissions when asked to restore mode on a cloned symlink.
+// symlink's target. os.Chmod follows symlinks, so a naive
+// implementation would silently alter an unrelated file's mode when
+// asked to restore mode on a cloned symlink.
+//
+// SPDX-License-Identifier: GPL-2.0
+//
+// (c) 2026 Sudhi Herle <sudhi@herle.net>
+//
+// Licensing Terms: GPLv2
+//
+// If you need a commercial license for this work, please contact
+// the author.
+//
+// This software does not come with any express or implied
+// warranty; it is provided "as is". No claim is made to its
+// suitability for any purpose.
 
 //go:build unix
 
@@ -20,8 +33,8 @@ import (
 // TestClonemodeDoesNotFollowSymlink plants a target file with a known
 // mode, creates a symlink with a different (recorded) mode, invokes
 // clonemode on the symlink, and asserts the target's mode is
-// unchanged. Pre-fix, os.Chmod would have followed the symlink and
-// clobbered the target mode.
+// unchanged. A naive os.Chmod implementation would follow the symlink
+// and clobber the target mode.
 func TestClonemodeDoesNotFollowSymlink(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target")

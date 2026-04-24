@@ -1,5 +1,7 @@
 // engine.go - An engine for comparing metadata from two similar Filesys trees.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

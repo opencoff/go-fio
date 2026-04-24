@@ -1,5 +1,7 @@
 // xattr_caps_linux.go -- Linux capability preflight for xattr writes.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

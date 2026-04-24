@@ -2,6 +2,8 @@
 
 # Tool to regenerate protobuf code as needed
 #
+# SPDX-License-Identifier: GPL-2.0
+#
 # (c) 2016 Sudhi Herle
 #
 # License: GPLv2

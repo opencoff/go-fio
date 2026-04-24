@@ -1,5 +1,7 @@
 // mknod_unix.go -- mknod(2) wrapper for linux and darwin.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2021 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

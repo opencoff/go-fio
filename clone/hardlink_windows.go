@@ -1,5 +1,7 @@
 // hardlink_windows.go -- tracking & cloning hardlinks for windows
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2024 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

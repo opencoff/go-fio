@@ -1,5 +1,7 @@
 // testutil.go -- cross-platform test helpers for go-fio.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

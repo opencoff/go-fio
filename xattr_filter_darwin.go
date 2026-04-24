@@ -1,5 +1,7 @@
 // xattr_filter_darwin.go -- drop macOS ACL xattr from list / set paths.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

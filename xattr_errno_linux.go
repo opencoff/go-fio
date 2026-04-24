@@ -1,5 +1,7 @@
 // xattr_errno_linux.go -- "xattr not found" predicate for linux
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

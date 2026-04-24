@@ -1,4 +1,6 @@
-// info.go - a better fs.FileInfo that also handles xattr
+// info.go -- a better fs.FileInfo that also handles xattr
+//
+// SPDX-License-Identifier: GPL-2.0
 //
 // (c) 2024- Sudhi Herle <sudhi@herle.net>
 //
@@ -8,7 +10,7 @@
 // the author.
 //
 // This software does not come with any express or implied
-// warranty; it is provided "as is". No claim  is made to its
+// warranty; it is provided "as is". No claim is made to its
 // suitability for any purpose.
 
 package fio
@@ -18,7 +20,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,15 +30,13 @@ import (
 
 // Info represents a file/dir metadata in a normalized form.
 // It satisfies the fs.FileInfo interface and notably supports
-// extended file system attributes (`xattr(7)`). This type
-// can also be safely marshaled and unmarshaled into a portable
-// byte stream via proto+vtproto under the hood.
+// extended file system attributes (`xattr(7)`). It can also be
+// marshaled and unmarshaled into a portable byte stream.
 //
-// The struct layout intentionally mirrors the pre-proto era so
-// callers keep their struct-literal idioms (`&fio.Info{Mod: x}`)
-// and zero-value construction works without ceremony. A local
-// pb.Info is allocated inside Marshal/Unmarshal for the wire
-// encoding; none of that surfaces to callers.
+// Callers construct an Info either by passing a *Info to Statm /
+// Lstatm / Fstatm, or by struct literal (`&fio.Info{Mod: m}`).
+// The wire encoding is handled via a local pb.Info inside the
+// Marshal path; none of that surfaces to callers.
 type Info struct {
 	Ino  uint64
 	Siz  int64
@@ -278,7 +279,9 @@ func (ii *Info) Unmarshal(b []byte) (int, error) {
 //
 // The xattr map is serialized into a sorted []*XattrEntry so
 // identical Info values (regardless of map insertion order)
-// produce byte-identical marshaled output.
+// produce byte-identical marshaled output. We build the entries
+// slice directly from the map and sort it in place - no
+// intermediate []string of keys, one pass of allocation.
 func (ii *Info) toProto(flag MarshalFlag) *pb.Info {
 	path := ii.path
 	if flag&JunkPath != 0 {
@@ -286,33 +289,31 @@ func (ii *Info) toProto(flag MarshalFlag) *pb.Info {
 	}
 
 	p := &pb.Info{
-		Ino:          ii.Ino,
-		Siz:          ii.Siz,
-		Dev:          ii.Dev,
-		Rdev:         ii.Rdev,
-		Mod:          uint32(ii.Mod),
-		Uid:          ii.Uid,
-		Gid:          ii.Gid,
-		Nlink:        ii.Nlink,
-		AtimUnixNano: ii.Atim.UnixNano(),
-		MtimUnixNano: ii.Mtim.UnixNano(),
-		CtimUnixNano: ii.Ctim.UnixNano(),
-		Path:         path,
+		Ino:   ii.Ino,
+		Siz:   ii.Siz,
+		Dev:   ii.Dev,
+		Rdev:  ii.Rdev,
+		Mod:   uint32(ii.Mod),
+		Uid:   ii.Uid,
+		Gid:   ii.Gid,
+		Nlink: ii.Nlink,
+		Atim:  ii.Atim.UnixNano(),
+		Mtim:  ii.Mtim.UnixNano(),
+		Ctim:  ii.Ctim.UnixNano(),
+		Path:  path,
 	}
 
 	if n := len(ii.Xattr); n > 0 {
-		keys := make([]string, 0, n)
-		for k := range ii.Xattr {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
 		p.Entries = make([]*pb.XattrEntry, 0, n)
-		for _, k := range keys {
+		for k, v := range ii.Xattr {
 			p.Entries = append(p.Entries, &pb.XattrEntry{
 				Key:   k,
-				Value: []byte(ii.Xattr[k]),
+				Value: []byte(v),
 			})
 		}
+		slices.SortFunc(p.Entries, func(a, b *pb.XattrEntry) int {
+			return strings.Compare(a.Key, b.Key)
+		})
 	}
 
 	return p
@@ -328,9 +329,9 @@ func (ii *Info) fromProto(p *pb.Info) {
 	ii.Uid = p.Uid
 	ii.Gid = p.Gid
 	ii.Nlink = p.Nlink
-	ii.Atim = time.Unix(0, p.AtimUnixNano)
-	ii.Mtim = time.Unix(0, p.MtimUnixNano)
-	ii.Ctim = time.Unix(0, p.CtimUnixNano)
+	ii.Atim = time.Unix(0, p.Atim)
+	ii.Mtim = time.Unix(0, p.Mtim)
+	ii.Ctim = time.Unix(0, p.Ctim)
 	ii.path = p.Path
 
 	ii.Xattr = make(Xattr, len(p.Entries))

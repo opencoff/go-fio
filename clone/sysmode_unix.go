@@ -1,5 +1,7 @@
 // sysmode_unix.go -- shared Go FileMode → POSIX mode translator.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2021 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

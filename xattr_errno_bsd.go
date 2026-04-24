@@ -1,5 +1,7 @@
 // xattr_errno_bsd.go -- "xattr not found" predicate for darwin/BSD
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

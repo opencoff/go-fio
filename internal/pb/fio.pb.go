@@ -1,4 +1,17 @@
-// fio.proto -- wire-format schema for fio.Info and fio.Xattr.
+// fio.proto -- wire-format schema for fio.Info metadata.
+//
+// SPDX-License-Identifier: GPL-2.0
+//
+// (c) 2024- Sudhi Herle <sudhi@herle.net>
+//
+// Licensing Terms: GPLv2
+//
+// If you need a commercial license for this work, please contact
+// the author.
+//
+// This software does not come with any express or implied
+// warranty; it is provided "as is". No claim is made to its
+// suitability for any purpose.
 //
 // Generated Go code lands in ./internal/pb/ via scripts/gen-proto.sh.
 // Regenerate with:
@@ -41,15 +54,10 @@ const (
 
 // Wire-format metadata for a file-system entry (mirrors fio.Info).
 //
-// Field names are chosen to match the exported Go field names of
-// fio.Info where we want protobuf field promotion (via struct
-// embedding) to expose them directly: Ino, Siz, Dev, Rdev, Mod,
-// Uid, Gid, Nlink, Path.
-//
-// Fields that need type translation on the fio.Info side
-// (time.Time, xattr map) get distinct names (AtimUnixNano,
-// Entries) so they don't shadow the Go-native fields on the
-// outer struct.
+// Field names match the Go-side fio.Info field names exactly
+// (Ino, Siz, Dev, Rdev, Mod, Uid, Gid, Nlink, Atim, Mtim, Ctim,
+// Path), so the hand-written toProto / fromProto converters read
+// as straight field copies.
 type Info struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Identity.
@@ -67,13 +75,12 @@ type Info struct {
 	Uid   uint32 `protobuf:"varint,6,opt,name=uid,proto3" json:"uid,omitempty"`
 	Gid   uint32 `protobuf:"varint,7,opt,name=gid,proto3" json:"gid,omitempty"`
 	Nlink uint32 `protobuf:"varint,8,opt,name=nlink,proto3" json:"nlink,omitempty"`
-	// Times — signed nanoseconds since Unix epoch. Signed so
-	// pre-1970 values survive (the old enctime cast to uint64
-	// silently corrupted them). Range ±292 years covers any
+	// Times as signed nanoseconds since Unix epoch. Signed so
+	// pre-1970 values survive. Range ±292 years covers any
 	// timestamp a kernel will issue.
-	AtimUnixNano int64 `protobuf:"varint,9,opt,name=atim_unix_nano,json=atimUnixNano,proto3" json:"atim_unix_nano,omitempty"`
-	MtimUnixNano int64 `protobuf:"varint,10,opt,name=mtim_unix_nano,json=mtimUnixNano,proto3" json:"mtim_unix_nano,omitempty"`
-	CtimUnixNano int64 `protobuf:"varint,11,opt,name=ctim_unix_nano,json=ctimUnixNano,proto3" json:"ctim_unix_nano,omitempty"`
+	Atim int64 `protobuf:"varint,9,opt,name=atim,proto3" json:"atim,omitempty"`
+	Mtim int64 `protobuf:"varint,10,opt,name=mtim,proto3" json:"mtim,omitempty"`
+	Ctim int64 `protobuf:"varint,11,opt,name=ctim,proto3" json:"ctim,omitempty"`
 	// File path. The JunkPath MarshalFlag strips to basename in
 	// the converter before this field is populated.
 	Path string `protobuf:"bytes,12,opt,name=path,proto3" json:"path,omitempty"`
@@ -81,13 +88,9 @@ type Info struct {
 	// must be valid UTF-8, but raw xattr payloads (e.g. POSIX ACL
 	// blobs, security.capability) are arbitrary octet sequences.
 	//
-	// Name: entries (not xattr) so the outer fio.Info.Xattr map
-	// field doesn't collide with field promotion.
-	//
 	// Deterministic ordering: the converter sorts entries by key
-	// before marshaling so the marshaled bytes are stable across
-	// runs — required for content-addressed storage / hash
-	// comparisons.
+	// before marshaling so the bytes are stable across runs -
+	// required for content-addressed storage / hash comparisons.
 	Entries       []*XattrEntry `protobuf:"bytes,13,rep,name=entries,proto3" json:"entries,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -179,23 +182,23 @@ func (x *Info) GetNlink() uint32 {
 	return 0
 }
 
-func (x *Info) GetAtimUnixNano() int64 {
+func (x *Info) GetAtim() int64 {
 	if x != nil {
-		return x.AtimUnixNano
+		return x.Atim
 	}
 	return 0
 }
 
-func (x *Info) GetMtimUnixNano() int64 {
+func (x *Info) GetMtim() int64 {
 	if x != nil {
-		return x.MtimUnixNano
+		return x.Mtim
 	}
 	return 0
 }
 
-func (x *Info) GetCtimUnixNano() int64 {
+func (x *Info) GetCtim() int64 {
 	if x != nil {
-		return x.CtimUnixNano
+		return x.Ctim
 	}
 	return 0
 }
@@ -270,7 +273,7 @@ var File_proto_fio_proto protoreflect.FileDescriptor
 
 const file_proto_fio_proto_rawDesc = "" +
 	"\n" +
-	"\x0fproto/fio.proto\x12\x0fopencoff.fio.v1\"\x87\x03\n" +
+	"\x0fproto/fio.proto\x12\x0fopencoff.fio.v1\"\xc7\x02\n" +
 	"\x04Info\x12\x10\n" +
 	"\x03ino\x18\x01 \x01(\x04R\x03ino\x12\x10\n" +
 	"\x03dev\x18\x02 \x01(\x04R\x03dev\x12\x12\n" +
@@ -279,13 +282,13 @@ const file_proto_fio_proto_rawDesc = "" +
 	"\x03mod\x18\x05 \x01(\rR\x03mod\x12\x10\n" +
 	"\x03uid\x18\x06 \x01(\rR\x03uid\x12\x10\n" +
 	"\x03gid\x18\a \x01(\rR\x03gid\x12\x14\n" +
-	"\x05nlink\x18\b \x01(\rR\x05nlink\x12$\n" +
-	"\x0eatim_unix_nano\x18\t \x01(\x03R\fatimUnixNano\x12$\n" +
-	"\x0emtim_unix_nano\x18\n" +
-	" \x01(\x03R\fmtimUnixNano\x12$\n" +
-	"\x0ectim_unix_nano\x18\v \x01(\x03R\fctimUnixNano\x12\x12\n" +
+	"\x05nlink\x18\b \x01(\rR\x05nlink\x12\x12\n" +
+	"\x04atim\x18\t \x01(\x03R\x04atim\x12\x12\n" +
+	"\x04mtim\x18\n" +
+	" \x01(\x03R\x04mtim\x12\x12\n" +
+	"\x04ctim\x18\v \x01(\x03R\x04ctim\x12\x12\n" +
 	"\x04path\x18\f \x01(\tR\x04path\x125\n" +
-	"\aentries\x18\r \x03(\v2\x1b.opencoff.fio.v1.XattrEntryR\aentriesJ\x04\b\x0e\x10 R\x13birthtime_unix_nanoR\x05flagsR\n" +
+	"\aentries\x18\r \x03(\v2\x1b.opencoff.fio.v1.XattrEntryR\aentriesJ\x04\b\x0e\x10 R\tbirthtimeR\x05flagsR\n" +
 	"generation\"4\n" +
 	"\n" +
 	"XattrEntry\x12\x10\n" +

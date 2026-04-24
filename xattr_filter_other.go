@@ -1,5 +1,7 @@
 // xattr_filter_other.go -- no-op xattr filter for non-darwin platforms.
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2026 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2

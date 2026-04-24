@@ -1,5 +1,7 @@
 // utimes_unix.go -- set file times for unixish platforms
 //
+// SPDX-License-Identifier: GPL-2.0
+//
 // (c) 2021 Sudhi Herle <sudhi@herle.net>
 //
 // Licensing Terms: GPLv2
