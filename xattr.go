@@ -138,7 +138,12 @@ func LclearXattr(nm string) error {
 	return clear(nm, xattr.LList, xattr.LRemove)
 }
 
-// handy helper that works for files and symlinks
+// handy helper that works for files and symlinks.
+//
+// Between the initial list() and each per-key get(), another process
+// may remove an attribute. The kernel surfaces that as ENODATA on
+// Linux or ENOATTR on darwin/BSD. Treat it as a benign race: skip the
+// now-missing key and keep going, rather than aborting the whole fetch.
 func fetch(nm string, list func(nm string) ([]string, error),
 	get func(nm string, k string) ([]byte, error)) (Xattr, error) {
 	keys, err := list(nm)
@@ -150,6 +155,9 @@ func fetch(nm string, list func(nm string) ([]string, error),
 	for _, k := range keys {
 		b, err := get(nm, k)
 		if err != nil {
+			if isXattrNotFound(err) {
+				continue
+			}
 			return nil, err
 		}
 		x[k] = string(b)
@@ -157,7 +165,8 @@ func fetch(nm string, list func(nm string) ([]string, error),
 	return x, nil
 }
 
-// handy helper to clear all xattr of nm; works for files and symlinks
+// handy helper to clear all xattr of nm; works for files and symlinks.
+// Tolerates the same list/remove TOCTOU that fetch does.
 func clear(nm string, list func(nm string) ([]string, error),
 	del func(nm, key string) error) error {
 	keys, err := list(nm)
@@ -166,11 +175,14 @@ func clear(nm string, list func(nm string) ([]string, error),
 	}
 
 	for _, k := range keys {
-		if err = del(nm, k); err != nil {
+		if err := del(nm, k); err != nil {
+			if isXattrNotFound(err) {
+				continue
+			}
 			return err
 		}
 	}
-	return err
+	return nil
 }
 
 // handy helper to replace all xattr of nm; works for files and symlinks
