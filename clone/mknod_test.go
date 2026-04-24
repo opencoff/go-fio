@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/opencoff/go-fio"
+	"github.com/opencoff/go-fio/internal/testutil"
 	"golang.org/x/sys/unix"
 )
 
@@ -94,11 +95,8 @@ func mknodStat(t *testing.T, path string) *syscall.Stat_t {
 // TestMknodCreatesCharDevice exercises the real mknod(2) path by
 // re-creating /dev/null (major 1, minor 3). Needs CAP_MKNOD / root.
 func TestMknodCreatesCharDevice(t *testing.T) {
+	testutil.RequirePrivileged(t)
 	assert := newAsserter(t)
-
-	if os.Geteuid() != 0 {
-		t.Skip("needs root to test mknod")
-	}
 
 	tmp := getTmpdir(t)
 	dst := filepath.Join(tmp, "null")
@@ -124,11 +122,8 @@ func TestMknodCreatesCharDevice(t *testing.T) {
 // TestMknodCreatesBlockDevice mirrors the char-device test but asks
 // for a block device (major 1, minor 0 — loop0-ish). Also root-only.
 func TestMknodCreatesBlockDevice(t *testing.T) {
+	testutil.RequirePrivileged(t)
 	assert := newAsserter(t)
-
-	if os.Geteuid() != 0 {
-		t.Skip("needs root to test mknod")
-	}
 
 	tmp := getTmpdir(t)
 	dst := filepath.Join(tmp, "blk")
