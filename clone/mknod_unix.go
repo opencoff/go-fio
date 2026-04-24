@@ -1,4 +1,4 @@
-// mknod_freebsd.go -- mknod(2) for FreeBSD.
+// mknod_unix.go -- mknod(2) wrapper for linux and darwin.
 //
 // (c) 2021 Sudhi Herle <sudhi@herle.net>
 //
@@ -11,7 +11,7 @@
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
 
-//go:build freebsd
+//go:build linux || darwin
 
 package clone
 
@@ -21,11 +21,12 @@ import (
 	"github.com/opencoff/go-fio"
 )
 
-// mknod creates a special file at dst matching fi. Same contract as
-// the linux/darwin variant; the only platform delta is that FreeBSD's
-// syscall.Mknod takes dev as uint64 rather than int.
+// mknod creates a special file at dst matching fi. Uses fi.Rdev (the
+// device this special file represents) - not fi.Dev (the filesystem
+// hosting the source) - and translates Go's fs.FileMode type bits
+// into POSIX S_IF* bits via sysMode().
 func mknod(dst string, fi *fio.Info) error {
-	if err := syscall.Mknod(dst, sysMode(fi.Mode()), fi.Rdev); err != nil {
+	if err := syscall.Mknod(dst, sysMode(fi.Mode()), int(fi.Rdev)); err != nil {
 		return &Error{"mknod", fi.Path(), dst, err}
 	}
 	return nil

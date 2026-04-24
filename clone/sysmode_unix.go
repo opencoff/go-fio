@@ -1,4 +1,4 @@
-// mknod_freebsd.go -- mknod(2) for freebsd
+// sysmode_unix.go -- shared Go FileMode → POSIX mode translator.
 //
 // (c) 2021 Sudhi Herle <sudhi@herle.net>
 //
@@ -11,23 +11,14 @@
 // warranty; it is provided "as is". No claim  is made to its
 // suitability for any purpose.
 
-//go:build linux || darwin
+//go:build linux || darwin || freebsd
 
 package clone
 
 import (
 	"io/fs"
 	"syscall"
-
-	"github.com/opencoff/go-fio"
 )
-
-func mknod(dst string, fi *fio.Info) error {
-	if err := syscall.Mknod(dst, sysMode(fi.Mode()), int(fi.Rdev)); err != nil {
-		return &Error{"mknod", fi.Path(), dst, err}
-	}
-	return nil
-}
 
 // sysMode converts a Go fs.FileMode into a POSIX-style mode bitmask
 // suitable for syscall.Mknod. fs.FileMode carries the file-type in the
