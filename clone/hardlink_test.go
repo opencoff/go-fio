@@ -98,7 +98,7 @@ func TestHardlinkerConcurrent(t *testing.T) {
 
 	// The links map must contain N-1 entries, one per follower dst.
 	var linksSize int
-	h.links.Range(func(_, _ string) bool {
+	h.links.Range(func(_ string, _ linkRec) bool {
 		linksSize++
 		return true
 	})
@@ -121,13 +121,16 @@ func TestHardlinkerSerialFirstCaller(t *testing.T) {
 		t.Fatalf("second call should return true, got false")
 	}
 
-	// h.links should record b -> a.
+	// h.links should record b -> a, with the src Info preserved.
 	v, ok := h.links.Load("/dst/b")
 	if !ok {
 		t.Fatalf("expected /dst/b to be recorded in h.links")
 	}
-	if v != "/dst/a" {
-		t.Fatalf("expected /dst/b -> /dst/a, got /dst/b -> %q", v)
+	if v.origDst != "/dst/a" {
+		t.Fatalf("expected /dst/b -> /dst/a, got /dst/b -> %q", v.origDst)
+	}
+	if v.src != src {
+		t.Fatalf("expected linkRec.src to be the tracked src Info")
 	}
 }
 
@@ -161,7 +164,7 @@ func TestHardlinkerSkipsNonRegular(t *testing.T) {
 	// Neither internal map should have any entries.
 	var mSize, linksSize int
 	h.m.Range(func(_, _ string) bool { mSize++; return true })
-	h.links.Range(func(_, _ string) bool { linksSize++; return true })
+	h.links.Range(func(_ string, _ linkRec) bool { linksSize++; return true })
 	if mSize != 0 {
 		t.Fatalf("expected h.m to be empty, got %d entries", mSize)
 	}

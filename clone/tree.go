@@ -40,24 +40,35 @@ type Option func(o *treeopt)
 // I/O operation. For every entry that is processed, Tree()
 // invokes the Copy or Delete methods. The final metadata
 // fixup step is tracked by the MetadataUpdate method.
+//
+// Every path-bearing callback is also given the *fio.Info
+// for the entry being acted on. For events sourced from the
+// src side (Mkdir, Copy of a left-only or differing entry,
+// Link, MetadataUpdate), fi describes the source. For Delete
+// events (right-only entries), fi describes the dst entry
+// being removed. Observers can recover counter-side info via
+// the cmp.Difference handed to Difference().
 type Observer interface {
 	cmp.Observer
 
 	Difference(d *cmp.Difference)
 
-	// mkdir dst
-	Mkdir(dst string)
+	// mkdir dst; src is the source dir's Info
+	Mkdir(dst string, src *fio.Info)
 
-	// copy file src -> dst
-	Copy(dst, src string)
+	// copy file src -> dst; fi is the source Info
+	Copy(dst, src string, fi *fio.Info)
 
-	// delete file
-	Delete(nm string)
+	// delete dst; fi is the entry being removed
+	Delete(dst string, fi *fio.Info)
 
-	// create a hardlink src -> dst
-	Link(dst, src string)
+	// create a hardlink: ln src dst (src is an already-cloned
+	// dst-side path that shares an inode with dst). fi is the
+	// original source-tree Info that established the inode group.
+	Link(dst, src string, fi *fio.Info)
 
-	MetadataUpdate(dst, src string)
+	// metadata fixup on dst; fi is the freshly Lstat'd source
+	MetadataUpdate(dst, src string, fi *fio.Info)
 }
 
 // WithIgnoreAttr captures the attributes of fio.Info that must be
@@ -237,13 +248,13 @@ func (cc *dircloner) clone(ctx context.Context) error {
 	dirs := dirlist(cc.LeftDirs)
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.SetLimit(conc)
-	for _, nm := range dirs {
-		nm := nm
-		src := filepath.Join(cc.Src, nm)
-		dst := filepath.Join(cc.Dst, nm)
+	for _, de := range dirs {
+		de := de
+		src := de.fi.Path()
+		dst := filepath.Join(cc.Dst, de.rel)
 
 		cc.dirs.Store(dst, true)
-		cc.o.Mkdir(dst)
+		cc.o.Mkdir(dst, de.fi)
 		eg.Go(func() error {
 			if egctx.Err() != nil {
 				return egctx.Err()
@@ -277,13 +288,13 @@ func (cc *dircloner) clone(ctx context.Context) error {
 
 	cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
 		nm := fi.Path()
-		cc.o.Delete(nm)
+		cc.o.Delete(nm, fi)
 		return submit(nm, func() error { return cc.doDel(nm) })
 	})
 
 	cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
 		nm := fi.Path()
-		cc.o.Delete(nm)
+		cc.o.Delete(nm, fi)
 		return submit(nm, func() error { return cc.doDel(nm) })
 	})
 
@@ -293,17 +304,17 @@ func (cc *dircloner) clone(ctx context.Context) error {
 		if linked := cc.h.track(p.Src, dst); linked {
 			return egctx.Err() == nil
 		}
-		cc.o.Copy(dst, src)
+		cc.o.Copy(dst, src, p.Src)
 		return submit(dst, func() error { return cc.doCopy(dst, src) })
 	})
 
 	cc.LeftFiles.Range(func(nm string, fi *fio.Info) bool {
-		src := filepath.Join(cc.Src, nm)
+		src := fi.Path()
 		dst := filepath.Join(cc.Dst, nm)
 		if linked := cc.h.track(fi, dst); linked {
 			return egctx.Err() == nil
 		}
-		cc.o.Copy(dst, src)
+		cc.o.Copy(dst, src, fi)
 		return submit(dst, func() error { return cc.doCopy(dst, src) })
 	})
 
@@ -314,11 +325,11 @@ func (cc *dircloner) clone(ctx context.Context) error {
 	// Pass 3: resolved hardlinks.
 	eg, egctx = errgroup.WithContext(ctx)
 	eg.SetLimit(conc)
-	cc.h.hardlinks(func(d, s string) {
+	cc.h.hardlinks(func(d, s string, fi *fio.Info) {
 		if egctx.Err() != nil {
 			return
 		}
-		cc.o.Link(d, s)
+		cc.o.Link(d, s, fi)
 		eg.Go(func() error {
 			if egctx.Err() != nil {
 				return egctx.Err()
@@ -373,7 +384,7 @@ func (cc *dircloner) fixup(dmap map[string]bool) error {
 			errs = append(errs, &Error{"fixup", cc.Src, cc.Dst, err})
 			continue
 		}
-		cc.o.MetadataUpdate(p, src)
+		cc.o.MetadataUpdate(p, src, fi)
 	}
 
 	if len(errs) > 0 {
@@ -426,20 +437,32 @@ func (cc *dircloner) doLink(dst, src string) error {
 	return nil
 }
 
-// take a list of paths and return only longest prefixes
-func dirlist(m *fio.Map) []string {
+// dirEntry pairs the relative-path key in the cmp Map with
+// the *fio.Info the engine recorded for it. We need both:
+// the rel key drives dst-path synthesis (Join(cc.Dst, rel)),
+// while the Info gets handed to observers and back to Lstat.
+type dirEntry struct {
+	rel string
+	fi  *fio.Info
+}
+
+// dirlist returns all entries in m, sorted by rel-path so that
+// parent dirs are mkdir'd before children.
+func dirlist(m *fio.Map) []dirEntry {
 	if m.Size() == 0 {
-		return []string{}
+		return nil
 	}
 
-	keys := make([]string, 0, m.Size())
-	m.Range(func(nm string, _ *fio.Info) bool {
-		keys = append(keys, nm)
+	out := make([]dirEntry, 0, m.Size())
+	m.Range(func(nm string, fi *fio.Info) bool {
+		out = append(out, dirEntry{rel: nm, fi: fi})
 		return true
 	})
 
-	slices.Sort(keys)
-	return keys
+	slices.SortFunc(out, func(a, b dirEntry) int {
+		return strings.Compare(a.rel, b.rel)
+	})
+	return out
 }
 
 // for now this is unused
@@ -484,11 +507,11 @@ type dummyObserver struct{}
 
 var _ Observer = &dummyObserver{}
 
-func (d *dummyObserver) Difference(_ *cmp.Difference) {}
-func (d *dummyObserver) Mkdir(_ string)               {}
-func (d *dummyObserver) Copy(_, _ string)             {}
-func (d *dummyObserver) Delete(_ string)              {}
-func (d *dummyObserver) Link(_, _ string)             {}
-func (d *dummyObserver) MetadataUpdate(_, _ string)   {}
-func (d *dummyObserver) VisitSrc(_ *fio.Info)         {}
-func (d *dummyObserver) VisitDst(_ *fio.Info)         {}
+func (d *dummyObserver) Difference(_ *cmp.Difference)              {}
+func (d *dummyObserver) Mkdir(_ string, _ *fio.Info)               {}
+func (d *dummyObserver) Copy(_, _ string, _ *fio.Info)             {}
+func (d *dummyObserver) Delete(_ string, _ *fio.Info)              {}
+func (d *dummyObserver) Link(_, _ string, _ *fio.Info)             {}
+func (d *dummyObserver) MetadataUpdate(_, _ string, _ *fio.Info)   {}
+func (d *dummyObserver) VisitSrc(_ *fio.Info)                      {}
+func (d *dummyObserver) VisitDst(_ *fio.Info)                      {}

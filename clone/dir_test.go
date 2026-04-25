@@ -239,21 +239,21 @@ var _ Observer = &po{}
 func (o *po) Difference(d *cmp.Difference) {
 	fmt.Printf("# %s\n", d)
 }
-func (o *po) Mkdir(d string) {
+func (o *po) Mkdir(d string, _ *fio.Info) {
 	fmt.Printf("# mkdir %s\n", d)
 }
-func (o *po) Copy(d, s string) {
+func (o *po) Copy(d, s string, _ *fio.Info) {
 	fmt.Printf("# cp %s %s\n", s, d)
 }
 
-func (o *po) Delete(d string) {
+func (o *po) Delete(d string, _ *fio.Info) {
 	fmt.Printf("# rm %s\n", d)
 }
 
-func (p *po) Link(d, s string) {
+func (p *po) Link(d, s string, _ *fio.Info) {
 	fmt.Printf("# ln %s %s\n", s, d)
 }
-func (o *po) MetadataUpdate(d, s string) {
+func (o *po) MetadataUpdate(d, s string, _ *fio.Info) {
 	fmt.Printf("# touch -f %s %s\n", s, d)
 }
 func (o *po) VisitSrc(_ *fio.Info) {}

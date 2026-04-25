@@ -31,18 +31,25 @@ import (
 // to the same inode result in tracking the _new_ hardlink name
 // against the first one; this is tracked in 'links'.
 
+// linkRec captures the orig dst path together with the
+// src-side *fio.Info; observers want both.
+type linkRec struct {
+	origDst string
+	src     *fio.Info
+}
+
 type hardlinker struct {
 	// tracks src:inode -> orig_dst
 	m *xsync.MapOf[string, string]
 
-	// stores the map of new_dst -> orig_dst
-	links *xsync.MapOf[string, string]
+	// stores the map of new_dst -> {orig_dst, src_info}
+	links *xsync.MapOf[string, linkRec]
 }
 
 func newHardlinker() *hardlinker {
 	h := &hardlinker{
 		m:     xsync.NewMapOf[string, string](),
-		links: xsync.NewMapOf[string, string](),
+		links: xsync.NewMapOf[string, linkRec](),
 	}
 	return h
 }
@@ -63,7 +70,7 @@ func (h *hardlinker) track(src *fio.Info, dst string) bool {
 	// that decision into a single atomic step.
 	orig, loaded := h.m.LoadOrStore(k, dst)
 	if loaded {
-		h.links.Store(dst, orig)
+		h.links.Store(dst, linkRec{origDst: orig, src: src})
 		return true
 	}
 
@@ -73,11 +80,10 @@ func (h *hardlinker) track(src *fio.Info, dst string) bool {
 	return false
 }
 
-func (h *hardlinker) hardlinks(fp func(dst, src string)) {
-	h.links.Range(func(k, v string) bool {
-		// k == dst
-		// v == orig src
-		fp(k, v)
+func (h *hardlinker) hardlinks(fp func(dst, src string, fi *fio.Info)) {
+	h.links.Range(func(k string, v linkRec) bool {
+		// k == dst, v.origDst == orig src, v.src == src Info
+		fp(k, v.origDst, v.src)
 		return true
 	})
 }
