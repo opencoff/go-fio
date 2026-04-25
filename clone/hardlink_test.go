@@ -88,20 +88,18 @@ func TestHardlinkerConcurrent(t *testing.T) {
 
 	// The primary map must contain exactly one entry for this inode.
 	var mSize int
-	h.m.Range(func(_, _ string) bool {
+	for range h.m.All() {
 		mSize++
-		return true
-	})
+	}
 	if mSize != 1 {
 		t.Fatalf("expected 1 inode entry in h.m, got %d", mSize)
 	}
 
 	// The links map must contain N-1 entries, one per follower dst.
 	var linksSize int
-	h.links.Range(func(_ string, _ linkRec) bool {
+	for range h.links.All() {
 		linksSize++
-		return true
-	})
+	}
 	if linksSize != N-1 {
 		t.Fatalf("expected %d entries in h.links, got %d", N-1, linksSize)
 	}
@@ -163,8 +161,12 @@ func TestHardlinkerSkipsNonRegular(t *testing.T) {
 
 	// Neither internal map should have any entries.
 	var mSize, linksSize int
-	h.m.Range(func(_, _ string) bool { mSize++; return true })
-	h.links.Range(func(_ string, _ linkRec) bool { linksSize++; return true })
+	for range h.m.All() {
+		mSize++
+	}
+	for range h.links.All() {
+		linksSize++
+	}
 	if mSize != 0 {
 		t.Fatalf("expected h.m to be empty, got %d entries", mSize)
 	}

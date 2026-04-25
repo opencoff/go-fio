@@ -211,10 +211,9 @@ func xerror(pref string, m *fio.Map) error {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s:\n", pref)
-	m.Range(func(nm string, fi *fio.Info) bool {
+	for nm, fi := range m.All() {
 		fmt.Fprintf(&b, "\t%s: %s\n", nm, fi)
-		return true
-	})
+	}
 
 	return fmt.Errorf("error - %s", b.String())
 }
@@ -223,10 +222,9 @@ func yerror(pref string, m *fio.PairMap) error {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s:\n", pref)
-	m.Range(func(nm string, p fio.Pair) bool {
+	for nm, p := range m.All() {
 		fmt.Fprintf(&b, "\t%s:\n\t\t%s\n\t\t%s\n", nm, p.Src, p.Dst)
-		return true
-	})
+	}
 
 	return fmt.Errorf("error - %s", b.String())
 }

@@ -22,7 +22,7 @@ import (
 	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
 	tr "github.com/opencoff/go-testrunner"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 type expectCmd struct {
@@ -104,12 +104,11 @@ func (t *expectCmd) Run(env *tr.TestEnv, args []string) error {
 	return nil
 }
 
-func keys[K comparable, V any](m *xsync.MapOf[K, V]) []K {
+func keys[K comparable, V any](m *xsync.Map[K, V]) []K {
 	var v []K
-	m.Range(func(k K, _ V) bool {
+	for k := range m.All() {
 		v = append(v, k)
-		return true
-	})
+	}
 	return v
 }
 

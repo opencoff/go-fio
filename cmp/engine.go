@@ -32,13 +32,12 @@ func (c *cmp) doDiff() error {
 	var eg errgroup.Group
 	eg.SetLimit(conc)
 
-	c.lhs.Range(func(nm string, fi *fio.Info) bool {
+	for nm, fi := range c.lhs.All() {
 		eg.Go(func() error {
 			c.lhsDiff(nm, fi)
 			return nil
 		})
-		return true
-	})
+	}
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -48,13 +47,12 @@ func (c *cmp) doDiff() error {
 	var eg2 errgroup.Group
 	eg2.SetLimit(conc)
 
-	c.rhs.Range(func(nm string, fi *fio.Info) bool {
+	for nm, fi := range c.rhs.All() {
 		eg2.Go(func() error {
 			c.rhsDiff(nm, fi)
 			return nil
 		})
-		return true
-	})
+	}
 	return eg2.Wait()
 }
 

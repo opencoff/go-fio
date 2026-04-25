@@ -27,7 +27,7 @@ import (
 	"testing"
 
 	"github.com/opencoff/go-fio/cmp"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // newTrackTestCloner builds a minimal *dircloner with only the
@@ -35,7 +35,7 @@ import (
 func newTrackTestCloner() *dircloner {
 	return &dircloner{
 		Difference: &cmp.Difference{Src: "/src", Dst: "/dst"},
-		dirs:       xsync.NewMapOf[string, bool](),
+		dirs:       xsync.NewMap[string, bool](),
 	}
 }
 

@@ -29,7 +29,7 @@ import (
 	"github.com/opencoff/go-fio"
 	"github.com/opencoff/go-fio/cmp"
 	"github.com/opencoff/go-fio/walk"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -210,7 +210,7 @@ type dircloner struct {
 
 	// set of dst dirs modified during the clone. Populated concurrently
 	// by worker goroutines; later walked sequentially by fixup.
-	dirs *xsync.MapOf[string, bool]
+	dirs *xsync.Map[string, bool]
 }
 
 func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
@@ -218,7 +218,7 @@ func newCloner(d *cmp.Difference, opt *treeopt) *dircloner {
 		treeopt:    *opt,
 		Difference: d,
 		h:          newHardlinker(),
-		dirs:       xsync.NewMapOf[string, bool](),
+		dirs:       xsync.NewMap[string, bool](),
 	}
 
 	cc.o.Difference(d)
@@ -286,37 +286,51 @@ func (cc *dircloner) clone(ctx context.Context) error {
 		return true
 	}
 
-	cc.RightFiles.Range(func(_ string, fi *fio.Info) bool {
+	for _, fi := range cc.RightFiles.All() {
 		nm := fi.Path()
 		cc.o.Delete(nm, fi)
-		return submit(nm, func() error { return cc.doDel(nm) })
-	})
+		if !submit(nm, func() error { return cc.doDel(nm) }) {
+			break
+		}
+	}
 
-	cc.RightDirs.Range(func(_ string, fi *fio.Info) bool {
+	for _, fi := range cc.RightDirs.All() {
 		nm := fi.Path()
 		cc.o.Delete(nm, fi)
-		return submit(nm, func() error { return cc.doDel(nm) })
-	})
+		if !submit(nm, func() error { return cc.doDel(nm) }) {
+			break
+		}
+	}
 
-	cc.Diff.Range(func(_ string, p fio.Pair) bool {
+	for _, p := range cc.Diff.All() {
 		src := p.Src.Path()
 		dst := p.Dst.Path()
 		if linked := cc.h.track(p.Src, dst); linked {
-			return egctx.Err() == nil
+			if egctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		cc.o.Copy(dst, src, p.Src)
-		return submit(dst, func() error { return cc.doCopy(dst, src) })
-	})
+		if !submit(dst, func() error { return cc.doCopy(dst, src) }) {
+			break
+		}
+	}
 
-	cc.LeftFiles.Range(func(nm string, fi *fio.Info) bool {
+	for nm, fi := range cc.LeftFiles.All() {
 		src := fi.Path()
 		dst := filepath.Join(cc.Dst, nm)
 		if linked := cc.h.track(fi, dst); linked {
-			return egctx.Err() == nil
+			if egctx.Err() != nil {
+				break
+			}
+			continue
 		}
 		cc.o.Copy(dst, src, fi)
-		return submit(dst, func() error { return cc.doCopy(dst, src) })
-	})
+		if !submit(dst, func() error { return cc.doCopy(dst, src) }) {
+			break
+		}
+	}
 
 	if err := eg.Wait(); err != nil {
 		return err
@@ -343,10 +357,9 @@ func (cc *dircloner) clone(ctx context.Context) error {
 
 	// fixup mtimes of modified dst dirs
 	dirmap := make(map[string]bool)
-	cc.dirs.Range(func(k string, _ bool) bool {
+	for k := range cc.dirs.All() {
 		dirmap[k] = true
-		return true
-	})
+	}
 	return cc.fixup(dirmap)
 }
 
@@ -454,10 +467,9 @@ func dirlist(m *fio.Map) []dirEntry {
 	}
 
 	out := make([]dirEntry, 0, m.Size())
-	m.Range(func(nm string, fi *fio.Info) bool {
+	for nm, fi := range m.All() {
 		out = append(out, dirEntry{rel: nm, fi: fi})
-		return true
-	})
+	}
 
 	slices.SortFunc(out, func(a, b dirEntry) int {
 		return strings.Compare(a.rel, b.rel)
@@ -489,10 +501,9 @@ func longestPrefixes(keys []string) []string {
 func newFunnyError(m *fio.PairMap) *FunnyError {
 	var f []FunnyEntry
 
-	m.Range(func(nm string, p fio.Pair) bool {
+	for nm, p := range m.All() {
 		f = append(f, FunnyEntry{nm, p.Src, p.Dst})
-		return true
-	})
+	}
 
 	return &FunnyError{f}
 }

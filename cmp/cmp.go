@@ -26,7 +26,7 @@ import (
 
 	"github.com/opencoff/go-fio"
 	"github.com/opencoff/go-fio/walk"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // IgnoreFlag captures the attributes we want to ignore while comparing
@@ -169,7 +169,7 @@ type cmp struct {
 
 	funny *fio.PairMap
 
-	done *xsync.MapOf[string, bool]
+	done *xsync.Map[string, bool]
 }
 
 // Difference captures the results of comparing two directory trees
@@ -214,10 +214,9 @@ func (d *Difference) String() string {
 		}
 
 		fmt.Fprintf(&b, "%s:\n", desc)
-		m.Range(func(nm string, fi *fio.Info) bool {
+		for nm, fi := range m.All() {
 			fmt.Fprintf(&b, "\t%s: %s\n", nm, fi)
-			return true
-		})
+		}
 	}
 
 	d2 := func(desc string, m *fio.PairMap) {
@@ -226,10 +225,9 @@ func (d *Difference) String() string {
 		}
 
 		fmt.Fprintf(&b, "%s:\n", desc)
-		m.Range(func(nm string, p fio.Pair) bool {
+		for nm, p := range m.All() {
 			fmt.Fprintf(&b, "\t%s:\n\t\tsrc %s\n\t\tdst %s\n", nm, p.Src, p.Dst)
-			return true
-		})
+		}
 	}
 
 	fmt.Fprintf(&b, "---BEGIN DIFFERENCE---\nSrc: %s\nDst: %s\n", d.Src, d.Dst)
@@ -435,7 +433,7 @@ func newCmp(lhs, rhs *fio.Map, opt *cmpopt) *cmp {
 		diff:       fio.NewPairMap(),
 		funny:      fio.NewPairMap(),
 
-		done: xsync.NewMapOf[string, bool](),
+		done: xsync.NewMap[string, bool](),
 	}
 
 	return c

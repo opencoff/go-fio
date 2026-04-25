@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"github.com/opencoff/go-fio"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // We track hardlinked files using the src file's properties.
@@ -40,16 +40,16 @@ type linkRec struct {
 
 type hardlinker struct {
 	// tracks src:inode -> orig_dst
-	m *xsync.MapOf[string, string]
+	m *xsync.Map[string, string]
 
 	// stores the map of new_dst -> {orig_dst, src_info}
-	links *xsync.MapOf[string, linkRec]
+	links *xsync.Map[string, linkRec]
 }
 
 func newHardlinker() *hardlinker {
 	h := &hardlinker{
-		m:     xsync.NewMapOf[string, string](),
-		links: xsync.NewMapOf[string, linkRec](),
+		m:     xsync.NewMap[string, string](),
+		links: xsync.NewMap[string, linkRec](),
 	}
 	return h
 }
@@ -81,9 +81,8 @@ func (h *hardlinker) track(src *fio.Info, dst string) bool {
 }
 
 func (h *hardlinker) hardlinks(fp func(dst, src string, fi *fio.Info)) {
-	h.links.Range(func(k string, v linkRec) bool {
-		// k == dst, v.origDst == orig src, v.src == src Info
+	// k == dst, v.origDst == orig src, v.src == src Info
+	for k, v := range h.links.All() {
 		fp(k, v.origDst, v.src)
-		return true
-	})
+	}
 }

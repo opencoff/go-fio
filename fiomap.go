@@ -16,7 +16,7 @@
 package fio
 
 import (
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // Pair represents the Stat/Lstat info of a pair of
@@ -27,18 +27,18 @@ type Pair struct {
 
 // Map is a concurrency safe map of path name and the
 // corresponding Stat/Lstat info.
-type Map = xsync.MapOf[string, *Info]
+type Map = xsync.Map[string, *Info]
 
 // PairMap is a concurrency safe map of path name and the
 // corresponding Stat/Lstat info of both the source and destination.
-type PairMap = xsync.MapOf[string, Pair]
+type PairMap = xsync.Map[string, Pair]
 
 // NewMap makes a new concurrent map of name to stat/lstat info
 func NewMap() *Map {
-	return xsync.NewMapOf[string, *Info]()
+	return xsync.NewMap[string, *Info]()
 }
 
 // NewPairMap makes a new concurrent map of name to a Pair
 func NewPairMap() *PairMap {
-	return xsync.NewMapOf[string, Pair]()
+	return xsync.NewMap[string, Pair]()
 }
