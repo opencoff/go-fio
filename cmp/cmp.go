@@ -131,7 +131,10 @@ func WithConcurrency(n int) Option {
 }
 
 // Observer is invoked when the comparator visits entries
-// in src and dst.
+// in src and dst. VisitSrc / VisitDst fire exactly once per
+// entry, during the parallel scan walk; the subsequent
+// classification pass does not re-fire them. Callbacks may
+// run concurrently from many worker goroutines.
 type Observer interface {
 	VisitSrc(fi *fio.Info)
 	VisitDst(fi *fio.Info)

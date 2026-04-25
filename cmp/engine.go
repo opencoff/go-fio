@@ -59,8 +59,6 @@ func (c *cmp) doDiff() error {
 }
 
 func (c *cmp) lhsDiff(nm string, lhs *fio.Info) {
-	c.o.VisitSrc(lhs)
-
 	rhs, ok := c.rhs.Load(nm)
 	if !ok {
 		if lhs.IsDir() {
@@ -102,8 +100,6 @@ func (c *cmp) lhsDiff(nm string, lhs *fio.Info) {
 }
 
 func (c *cmp) rhsDiff(nm string, rhs *fio.Info) {
-	c.o.VisitDst(rhs)
-
 	if _, ok := c.done.Load(nm); ok {
 		return
 	}
