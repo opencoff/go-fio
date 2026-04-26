@@ -45,6 +45,12 @@ type Info struct {
 	Dev  uint64
 	Rdev uint64
 
+	// POSIX st_blocks: count of 512-byte allocation units. The
+	// 512-byte unit is fixed by POSIX across every Unix kernel,
+	// independent of the filesystem's actual block size. Use
+	// DiskBytes() to recover bytes-on-disk.
+	Blocks int64
+
 	Mod   fs.FileMode
 	Uid   uint32
 	Gid   uint32
@@ -180,6 +186,14 @@ func (ii *Info) Size() int64 {
 	return ii.Siz
 }
 
+// DiskBytes returns the actually-allocated bytes-on-disk for this
+// entry. Differs from Size() for sparse files (where DiskBytes can
+// be far smaller than Size) and for tiny files (where DiskBytes is
+// rounded up to a filesystem block, so DiskBytes can exceed Size).
+func (ii *Info) DiskBytes() int64 {
+	return ii.Blocks * 512
+}
+
 // Mode returns the file mode bits
 func (ii *Info) Mode() fs.FileMode {
 	return ii.Mod
@@ -291,18 +305,19 @@ func (ii *Info) toProto(flag MarshalFlag) *pb.Info {
 	}
 
 	p := &pb.Info{
-		Ino:   ii.Ino,
-		Siz:   ii.Siz,
-		Dev:   ii.Dev,
-		Rdev:  ii.Rdev,
-		Mod:   uint32(ii.Mod),
-		Uid:   ii.Uid,
-		Gid:   ii.Gid,
-		Nlink: ii.Nlink,
-		Atim:  ii.Atim.UnixNano(),
-		Mtim:  ii.Mtim.UnixNano(),
-		Ctim:  ii.Ctim.UnixNano(),
-		Path:  path,
+		Ino:    ii.Ino,
+		Siz:    ii.Siz,
+		Blocks: ii.Blocks,
+		Dev:    ii.Dev,
+		Rdev:   ii.Rdev,
+		Mod:    uint32(ii.Mod),
+		Uid:    ii.Uid,
+		Gid:    ii.Gid,
+		Nlink:  ii.Nlink,
+		Atim:   ii.Atim.UnixNano(),
+		Mtim:   ii.Mtim.UnixNano(),
+		Ctim:   ii.Ctim.UnixNano(),
+		Path:   path,
 	}
 
 	if n := len(ii.Xattr); n > 0 {
@@ -325,6 +340,7 @@ func (ii *Info) toProto(flag MarshalFlag) *pb.Info {
 func (ii *Info) fromProto(p *pb.Info) {
 	ii.Ino = p.Ino
 	ii.Siz = p.Siz
+	ii.Blocks = p.Blocks
 	ii.Dev = p.Dev
 	ii.Rdev = p.Rdev
 	ii.Mod = fs.FileMode(p.Mod)

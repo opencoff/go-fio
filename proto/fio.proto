@@ -38,9 +38,9 @@ option go_package = "github.com/opencoff/go-fio/internal/pb";
 // Wire-format metadata for a file-system entry (mirrors fio.Info).
 //
 // Field names match the Go-side fio.Info field names exactly
-// (Ino, Siz, Dev, Rdev, Mod, Uid, Gid, Nlink, Atim, Mtim, Ctim,
-// Path), so the hand-written toProto / fromProto converters read
-// as straight field copies.
+// (Ino, Siz, Blocks, Dev, Rdev, Mod, Uid, Gid, Nlink, Atim, Mtim,
+// Ctim, Path), so the hand-written toProto / fromProto converters
+// read as straight field copies.
 message Info {
   // Identity.
   uint64 ino  = 1;
@@ -81,8 +81,14 @@ message Info {
   // required for content-addressed storage / hash comparisons.
   repeated XattrEntry entries = 13;
 
+  // Allocated 512-byte block count (POSIX st_blocks). The unit is
+  // standardized: every Unix kernel reports st_blocks in 512-byte
+  // chunks regardless of the underlying filesystem block size.
+  // Multiply by 512 (or use fio.Info.DiskBytes()) for bytes-on-disk.
+  int64 blocks = 14;
+
   // Reserved for future stat-like additions.
-  reserved 14 to 31;
+  reserved 15 to 31;
   reserved "birthtime", "flags", "generation";
 }
 

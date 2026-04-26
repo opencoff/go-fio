@@ -55,9 +55,9 @@ const (
 // Wire-format metadata for a file-system entry (mirrors fio.Info).
 //
 // Field names match the Go-side fio.Info field names exactly
-// (Ino, Siz, Dev, Rdev, Mod, Uid, Gid, Nlink, Atim, Mtim, Ctim,
-// Path), so the hand-written toProto / fromProto converters read
-// as straight field copies.
+// (Ino, Siz, Blocks, Dev, Rdev, Mod, Uid, Gid, Nlink, Atim, Mtim,
+// Ctim, Path), so the hand-written toProto / fromProto converters
+// read as straight field copies.
 type Info struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Identity.
@@ -91,7 +91,12 @@ type Info struct {
 	// Deterministic ordering: the converter sorts entries by key
 	// before marshaling so the bytes are stable across runs -
 	// required for content-addressed storage / hash comparisons.
-	Entries       []*XattrEntry `protobuf:"bytes,13,rep,name=entries,proto3" json:"entries,omitempty"`
+	Entries []*XattrEntry `protobuf:"bytes,13,rep,name=entries,proto3" json:"entries,omitempty"`
+	// Allocated 512-byte block count (POSIX st_blocks). The unit is
+	// standardized: every Unix kernel reports st_blocks in 512-byte
+	// chunks regardless of the underlying filesystem block size.
+	// Multiply by 512 (or use fio.Info.DiskBytes()) for bytes-on-disk.
+	Blocks        int64 `protobuf:"varint,14,opt,name=blocks,proto3" json:"blocks,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -217,6 +222,13 @@ func (x *Info) GetEntries() []*XattrEntry {
 	return nil
 }
 
+func (x *Info) GetBlocks() int64 {
+	if x != nil {
+		return x.Blocks
+	}
+	return 0
+}
+
 type XattrEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -273,7 +285,7 @@ var File_proto_fio_proto protoreflect.FileDescriptor
 
 const file_proto_fio_proto_rawDesc = "" +
 	"\n" +
-	"\x0fproto/fio.proto\x12\x0fopencoff.fio.v1\"\xc7\x02\n" +
+	"\x0fproto/fio.proto\x12\x0fopencoff.fio.v1\"\xdf\x02\n" +
 	"\x04Info\x12\x10\n" +
 	"\x03ino\x18\x01 \x01(\x04R\x03ino\x12\x10\n" +
 	"\x03dev\x18\x02 \x01(\x04R\x03dev\x12\x12\n" +
@@ -288,7 +300,8 @@ const file_proto_fio_proto_rawDesc = "" +
 	" \x01(\x03R\x04mtim\x12\x12\n" +
 	"\x04ctim\x18\v \x01(\x03R\x04ctim\x12\x12\n" +
 	"\x04path\x18\f \x01(\tR\x04path\x125\n" +
-	"\aentries\x18\r \x03(\v2\x1b.opencoff.fio.v1.XattrEntryR\aentriesJ\x04\b\x0e\x10 R\tbirthtimeR\x05flagsR\n" +
+	"\aentries\x18\r \x03(\v2\x1b.opencoff.fio.v1.XattrEntryR\aentries\x12\x16\n" +
+	"\x06blocks\x18\x0e \x01(\x03R\x06blocksJ\x04\b\x0f\x10 R\tbirthtimeR\x05flagsR\n" +
 	"generation\"4\n" +
 	"\n" +
 	"XattrEntry\x12\x10\n" +

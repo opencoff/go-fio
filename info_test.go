@@ -40,6 +40,22 @@ func TestBasicInfo(t *testing.T) {
 	assert(fi.Size() == ii.Size(), "size: exp %d, saw %d", fi.Size(), ii.Size())
 	assert(fi.ModTime().Equal(ii.ModTime()), "mtime: exp %s, saw %s", fi.ModTime(), ii.ModTime())
 	assert(fi.Mode() == ii.Mode(), "mode: exp %#b, saw %#b", fi.Mode(), ii.Mode())
+
+	// Blocks must be populated to a sane non-zero value for any
+	// regular file with content. Compare against syscall.Stat_t
+	// directly to confirm the kernel-reported value made it
+	// through makeInfo.
+	var st syscall.Stat_t
+	assert(syscall.Lstat(nm, &st) == nil, "syscall.Lstat: %s", nm)
+	assert(ii.Blocks == int64(st.Blocks),
+		"blocks: exp %d, saw %d", st.Blocks, ii.Blocks)
+	assert(ii.Blocks > 0, "blocks: zero for nonempty file %s", nm)
+
+	// DiskBytes should round up to a filesystem block on any
+	// content-bearing file: a 1KB-ish file uses at least one
+	// 4KB filesystem block in practice.
+	assert(ii.DiskBytes() == ii.Blocks*512,
+		"DiskBytes mismatch: %d vs %d*512", ii.DiskBytes(), ii.Blocks)
 }
 
 func TestXattr(t *testing.T) {

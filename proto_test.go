@@ -30,18 +30,19 @@ import (
 func TestProtoScalarRoundTrip(t *testing.T) {
 	atim := time.Now().Truncate(time.Nanosecond)
 	src := &Info{
-		Ino:   0xDEADBEEF_CAFEBABE,
-		Siz:   int64(1) << 40,
-		Dev:   0x1234_5678_9ABC_DEF0,
-		Rdev:  0xFEDC_BA98_7654_3210,
-		Mod:   fs.ModeDir | 0o755,
-		Uid:   1000,
-		Gid:   2000,
-		Nlink: 42,
-		Atim:  atim,
-		Mtim:  atim.Add(time.Second),
-		Ctim:  atim.Add(2 * time.Second),
-		Xattr: Xattr{},
+		Ino:    0xDEADBEEF_CAFEBABE,
+		Siz:    int64(1) << 40,
+		Blocks: 8192,
+		Dev:    0x1234_5678_9ABC_DEF0,
+		Rdev:   0xFEDC_BA98_7654_3210,
+		Mod:    fs.ModeDir | 0o755,
+		Uid:    1000,
+		Gid:    2000,
+		Nlink:  42,
+		Atim:   atim,
+		Mtim:   atim.Add(time.Second),
+		Ctim:   atim.Add(2 * time.Second),
+		Xattr:  Xattr{},
 	}
 	src.SetPath("/some/deliberately/deep/path/file.ext")
 
@@ -64,6 +65,9 @@ func TestProtoScalarRoundTrip(t *testing.T) {
 	}
 	if dst.Siz != src.Siz {
 		t.Errorf("Siz: got %d, want %d", dst.Siz, src.Siz)
+	}
+	if dst.Blocks != src.Blocks {
+		t.Errorf("Blocks: got %d, want %d", dst.Blocks, src.Blocks)
 	}
 	if dst.Dev != src.Dev {
 		t.Errorf("Dev: got %#x, want %#x", dst.Dev, src.Dev)
@@ -359,18 +363,19 @@ func TestProtoMarshalMany(t *testing.T) {
 func randProtoInfo() *Info {
 	atim := time.Unix(rand.Int64N(4_000_000_000)-1_000_000_000, rand.Int64N(1_000_000_000))
 	ii := &Info{
-		Ino:   rand.Uint64(),
-		Siz:   rand.Int64(),
-		Dev:   rand.Uint64(),
-		Rdev:  rand.Uint64(),
-		Uid:   rand.Uint32(),
-		Gid:   rand.Uint32(),
-		Nlink: rand.Uint32N(16),
-		Mod:   fs.FileMode(rand.Uint32N(0o777)),
-		Atim:  atim,
-		Mtim:  atim.Add(time.Duration(rand.Int64N(86400)) * time.Second),
-		Ctim:  atim,
-		Xattr: make(Xattr, rand.IntN(4)),
+		Ino:    rand.Uint64(),
+		Siz:    rand.Int64(),
+		Blocks: rand.Int64N(1 << 32),
+		Dev:    rand.Uint64(),
+		Rdev:   rand.Uint64(),
+		Uid:    rand.Uint32(),
+		Gid:    rand.Uint32(),
+		Nlink:  rand.Uint32N(16),
+		Mod:    fs.FileMode(rand.Uint32N(0o777)),
+		Atim:   atim,
+		Mtim:   atim.Add(time.Duration(rand.Int64N(86400)) * time.Second),
+		Ctim:   atim,
+		Xattr:  make(Xattr, rand.IntN(4)),
 	}
 	ii.SetPath(randStr(rand.IntN(20) + 1))
 	for i := 0; i < len(ii.Xattr); i++ {

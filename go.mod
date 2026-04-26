@@ -24,5 +24,3 @@ require (
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/term v0.27.0 // indirect
 )
-
-replace github.com/opencoff/go-fio => ../go-fio

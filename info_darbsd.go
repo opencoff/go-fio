@@ -24,10 +24,11 @@ import (
 
 func makeInfo(fi *Info, nm string, st *syscall.Stat_t, x Xattr) {
 	*fi = Info{
-		Ino:  st.Ino,
-		Siz:  st.Size,
-		Dev:  uint64(st.Dev),
-		Rdev: uint64(st.Rdev),
+		Ino:    st.Ino,
+		Siz:    st.Size,
+		Blocks: int64(st.Blocks),
+		Dev:    uint64(st.Dev),
+		Rdev:   uint64(st.Rdev),
 
 		Mod:   fs.FileMode(st.Mode & 0777),
 		Uid:   st.Uid,
