@@ -151,8 +151,6 @@ func WithObserver(ob Observer) Option {
 type cmp struct {
 	cmpopt
 
-	src, dst string
-
 	lhs, rhs *fio.Map
 
 	fileEq fileqFunc
@@ -469,10 +467,7 @@ type fileqFunc func(a, b *fio.Info) (bool, diffType)
 // comparing
 func makeEqFunc(opts *cmpopt) fileqFunc {
 	ignore := func(fl IgnoreFlag) bool {
-		if fl&opts.ignoreAttr > 0 {
-			return true
-		}
-		return false
+		return fl&opts.ignoreAttr > 0
 	}
 
 	eqv := make([]fileqFunc, 0, 6)

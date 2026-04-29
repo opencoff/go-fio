@@ -38,13 +38,13 @@ func TestSafeFileSimple(t *testing.T) {
 	_, err := createFile(fn, 1024+mrand.IntN(65536))
 	assert(err == nil, "can't create tmpfile: %s", err)
 
-	sf, err := NewSafeFile(fn, 0, 0, 0600)
+	_, err = NewSafeFile(fn, 0, 0, 0600)
 	assert(err != nil, "%s: bypassed overwrite protection", fn)
 
 	buf := make([]byte, 128+mrand.IntN(65536))
 	randbuf(buf)
 
-	sf, err = NewSafeFile(fn, OPT_OVERWRITE, 0, 0600)
+	sf, err := NewSafeFile(fn, OPT_OVERWRITE, 0, 0600)
 	assert(err == nil, "%s: can't create safefile: %s", fn, err)
 	assert(sf != nil, "%s: nil ptr", fn)
 

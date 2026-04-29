@@ -74,11 +74,11 @@ func TestVisitOncePerEntry(t *testing.T) {
 		"top",
 	}
 	dstFiles := []string{
-		"a/f1",     // common (will become CommonFiles)
-		"a/f2",     // common
-		"d/old1",   // right-only
-		"d/old2",   // right-only
-		"e/stale",  // right-only
+		"a/f1",    // common (will become CommonFiles)
+		"a/f2",    // common
+		"d/old1",  // right-only
+		"d/old2",  // right-only
+		"e/stale", // right-only
 	}
 	for _, p := range srcFiles {
 		assert(mkfilex(filepath.Join(src, p)) == nil, "mkfile src/%s", p)

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"sync/atomic"
 )
@@ -92,7 +91,7 @@ func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile,
 
 	// keep the old file around - we don't want to destroy it if we Abort() this operation.
 	tmp := fmt.Sprintf("%s.tmp.%d.%x", nm, os.Getpid(), randU32())
-	fd, err := os.OpenFile(tmp, flag, perm)
+	fd, err := os.OpenFile(tmp, flag, perm) // #nosec G304 -- caller-supplied path is the API contract
 	if err != nil {
 		return nil, err
 	}
@@ -114,32 +113,6 @@ func (sf *SafeFile) isOpen() bool {
 // RealName returns the actual name of the final file
 func (sf *SafeFile) RealName() string {
 	return sf.name
-}
-
-var flag2str = []struct {
-	flag int
-	name string
-}{
-	{os.O_RDONLY, "rdonly"},
-	{os.O_WRONLY, "wronly"},
-	{os.O_RDWR, "rdwr"},
-	{os.O_APPEND, "append"},
-	{os.O_CREATE, "creat"},
-	{os.O_EXCL, "excl"},
-	{os.O_SYNC, "sync"},
-	{os.O_TRUNC, "trunc"},
-}
-
-func prflag(flag int) string {
-	var v []string
-
-	for i := range flag2str {
-		fl := &flag2str[i]
-		if fl.flag&flag > 0 {
-			v = append(v, fl.name)
-		}
-	}
-	return strings.Join(v, ",")
 }
 
 // Attempt to write everything in 'b' and don't proceed if there was
@@ -189,8 +162,8 @@ func (sf *SafeFile) Abort() {
 
 func (sf *SafeFile) cleanup() {
 	nm := sf.Name()
-	sf.File.Close()
-	os.Remove(nm)
+	_ = sf.File.Close()
+	_ = os.Remove(nm)
 }
 
 // Close flushes all file data & metadata to disk, closes the file and atomically renames
@@ -256,35 +229,6 @@ func randU32() uint32 {
 	}
 
 	return binary.LittleEndian.Uint32(b[:])
-}
-
-func xflag2str(flag int) string {
-	var v []string
-	if flag&os.O_RDONLY > 0 {
-		v = append(v, "rdonly")
-	}
-	if flag&os.O_WRONLY > 0 {
-		v = append(v, "wronly")
-	}
-	if flag&os.O_RDWR > 0 {
-		v = append(v, "rdwr")
-	}
-	if flag&os.O_APPEND > 0 {
-		v = append(v, "append")
-	}
-	if flag&os.O_CREATE > 0 {
-		v = append(v, "creat")
-	}
-	if flag&os.O_EXCL > 0 {
-		v = append(v, "excl")
-	}
-	if flag&os.O_SYNC > 0 {
-		v = append(v, "sync")
-	}
-	if flag&os.O_TRUNC > 0 {
-		v = append(v, "trunc")
-	}
-	return strings.Join(v, ",")
 }
 
 var (

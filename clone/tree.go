@@ -518,11 +518,11 @@ type dummyObserver struct{}
 
 var _ Observer = &dummyObserver{}
 
-func (d *dummyObserver) Difference(_ *cmp.Difference)              {}
-func (d *dummyObserver) Mkdir(_ string, _ *fio.Info)               {}
-func (d *dummyObserver) Copy(_, _ string, _ *fio.Info)             {}
-func (d *dummyObserver) Delete(_ string, _ *fio.Info)              {}
-func (d *dummyObserver) Link(_, _ string, _ *fio.Info)             {}
-func (d *dummyObserver) MetadataUpdate(_, _ string, _ *fio.Info)   {}
-func (d *dummyObserver) VisitSrc(_ *fio.Info)                      {}
-func (d *dummyObserver) VisitDst(_ *fio.Info)                      {}
+func (d *dummyObserver) Difference(_ *cmp.Difference)            {}
+func (d *dummyObserver) Mkdir(_ string, _ *fio.Info)             {}
+func (d *dummyObserver) Copy(_, _ string, _ *fio.Info)           {}
+func (d *dummyObserver) Delete(_ string, _ *fio.Info)            {}
+func (d *dummyObserver) Link(_, _ string, _ *fio.Info)           {}
+func (d *dummyObserver) MetadataUpdate(_, _ string, _ *fio.Info) {}
+func (d *dummyObserver) VisitSrc(_ *fio.Info)                    {}
+func (d *dummyObserver) VisitDst(_ *fio.Info)                    {}

@@ -27,8 +27,12 @@ func makeInfo(fi *Info, nm string, st *syscall.Stat_t, x Xattr) {
 		Ino:    st.Ino,
 		Siz:    st.Size,
 		Blocks: int64(st.Blocks),
-		Dev:    uint64(st.Dev),
-		Rdev:   uint64(st.Rdev),
+		// st.Dev/st.Rdev are int32 on darwin and uint64 on
+		// freebsd. Real device IDs are non-negative; the
+		// uint32 step makes the zero-extension explicit on
+		// darwin and is a no-op on freebsd.
+		Dev:  uint64(uint32(st.Dev)),  // #nosec G115 -- zero-extend darwin int32 dev_t
+		Rdev: uint64(uint32(st.Rdev)), // #nosec G115 -- zero-extend darwin int32 dev_t
 
 		Mod:   fs.FileMode(st.Mode & 0777),
 		Uid:   st.Uid,

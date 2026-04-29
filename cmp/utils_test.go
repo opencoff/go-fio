@@ -42,23 +42,6 @@ func newAsserter(t *testing.T) func(cond bool, msg string, args ...interface{}) 
 	}
 }
 
-func newBenchAsserter(b *testing.B) func(cond bool, msg string, args ...interface{}) {
-	return func(cond bool, msg string, args ...interface{}) {
-		if cond {
-			return
-		}
-
-		_, file, line, ok := runtime.Caller(1)
-		if !ok {
-			file = "???"
-			line = 0
-		}
-
-		s := fmt.Sprintf(msg, args...)
-		b.Errorf("\n%s: %d: Assertion failed: %s\n", file, line, s)
-	}
-}
-
 func mkfilex(fn string) error {
 	bn := filepath.Dir(fn)
 	if err := os.MkdirAll(bn, 0700); err != nil {
@@ -77,8 +60,8 @@ func mkfilex(fn string) error {
 		return fmt.Errorf("rand read: %w", err)
 	}
 
-	fd.Write(b)
-	fd.Sync()
+	_, _ = fd.Write(b)
+	_ = fd.Sync()
 	return fd.Close()
 }
 

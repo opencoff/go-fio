@@ -16,6 +16,7 @@
 package fio
 
 import (
+	"io"
 	"io/fs"
 	"os"
 
@@ -31,7 +32,7 @@ func copyViaMmap(dst, src *os.File) error {
 	if err != nil {
 		return &CopyError{"mmap-reader", src.Name(), dst.Name(), err}
 	}
-	_, err = dst.Seek(0, os.SEEK_SET)
+	_, err = dst.Seek(0, io.SeekStart)
 	if err != nil {
 		return &CopyError{"seek-mmap", src.Name(), dst.Name(), err}
 	}
@@ -44,7 +45,7 @@ func copyViaMmap(dst, src *os.File) error {
 
 // slowCopy copies src to dst via mmap
 func slowCopy(dst, src string, perm fs.FileMode) error {
-	s, err := os.Open(src)
+	s, err := os.Open(src) // #nosec G304 -- caller-supplied path is the API contract
 	if err != nil {
 		return &CopyError{"open-src", src, dst, err}
 	}

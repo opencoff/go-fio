@@ -511,7 +511,7 @@ func (d *walkState) enq(items []walkItem) {
 
 // read a dir and return the names
 func readDir(nm string) ([]string, error) {
-	fd, err := os.Open(nm)
+	fd, err := os.Open(nm) // #nosec G304 -- walking caller-supplied paths is the API contract
 	if err != nil {
 		return nil, &Error{"readdir", nm, err}
 	}

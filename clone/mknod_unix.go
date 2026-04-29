@@ -28,7 +28,7 @@ import (
 // hosting the source) - and translates Go's fs.FileMode type bits
 // into POSIX S_IF* bits via sysMode().
 func mknod(dst string, fi *fio.Info) error {
-	if err := syscall.Mknod(dst, sysMode(fi.Mode()), int(fi.Rdev)); err != nil {
+	if err := syscall.Mknod(dst, sysMode(fi.Mode()), int(fi.Rdev)); err != nil { // #nosec G115 -- Mknod takes int; real device IDs fit
 		return &Error{"mknod", fi.Path(), dst, err}
 	}
 	return nil

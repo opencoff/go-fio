@@ -211,13 +211,13 @@ func mdEqual(newf, oldf string) error {
 	if err != nil {
 		return err
 	}
-	defer rmm.Unmap()
+	defer func() { _ = rmm.Unmap() }()
 
 	wmm, err := wm.Map(-1, 0, mmap.PROT_READ, mmap.F_READAHEAD)
 	if err != nil {
 		return err
 	}
-	defer wmm.Unmap()
+	defer func() { _ = wmm.Unmap() }()
 
 	if !bytes.Equal(rmm.Bytes(), wmm.Bytes()) {
 		return fmt.Errorf("content: mismatch")

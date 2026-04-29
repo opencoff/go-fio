@@ -73,7 +73,7 @@ func fileWith(dst, src string, opt metaOpt) error {
 
 	mode := fi.Mode()
 	if mode.IsRegular() {
-		s, err := os.Open(src)
+		s, err := os.Open(src) // #nosec G304 -- caller-supplied path is the API contract
 		if err != nil {
 			return &Error{"open-src", src, dst, err}
 		}
@@ -149,10 +149,10 @@ type cloner func(dst string, src *fio.Info) error
 // ACL mask. If chmod ran AFTER the xattr write it would clobber the
 // ACL-implied bits, leaving on-disk mode inconsistent with the ACL.
 // POSIX convention (matched by cp -a, rsync -A, GNU coreutils) is:
-//   1. chown  -- set ownership first; chmod and ACLs reference the uid/gid
-//   2. chmod  -- base mode bits
-//   3. xattr  -- including system.posix_acl_access which refines mode
-//   4. times  -- last, since mode/xattr writes bump ctime
+//  1. chown  -- set ownership first; chmod and ACLs reference the uid/gid
+//  2. chmod  -- base mode bits
+//  3. xattr  -- including system.posix_acl_access which refines mode
+//  4. times  -- last, since mode/xattr writes bump ctime
 var mdUpdaters = []cloner{
 	cloneugid,
 	clonemode,

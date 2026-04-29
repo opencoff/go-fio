@@ -27,3 +27,5 @@ go.work.sum
 bin/*
 ./bin/*
 ./bin
+# Added by code-review-graph
+.code-review-graph/

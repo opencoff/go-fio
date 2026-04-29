@@ -97,11 +97,11 @@ func TestProtoScalarRoundTrip(t *testing.T) {
 // uses int64 nanoseconds so negative values survive.
 func TestProtoTimeRoundTrip(t *testing.T) {
 	cases := []time.Time{
-		time.Unix(0, 0),                            // epoch
-		time.Now().Truncate(time.Nanosecond),       // now
+		time.Unix(0, 0),                              // epoch
+		time.Now().Truncate(time.Nanosecond),         // now
 		time.Date(1945, 8, 6, 8, 15, 0, 0, time.UTC), // pre-1970
 		time.Date(1969, 12, 31, 23, 59, 59, 999_999_999, time.UTC),
-		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),  // far future
+		time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC), // far future
 	}
 
 	for _, want := range cases {

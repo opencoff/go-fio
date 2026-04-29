@@ -177,8 +177,8 @@ func mkfilex(fn string) error {
 		return fmt.Errorf("creat: %s: %w", fn, err)
 	}
 
-	fd.Write([]byte("hello"))
-	fd.Sync()
+	_, _ = fd.Write([]byte("hello"))
+	_ = fd.Sync()
 	return fd.Close()
 }
 
