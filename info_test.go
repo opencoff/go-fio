@@ -47,7 +47,7 @@ func TestBasicInfo(t *testing.T) {
 	// through makeInfo.
 	var st syscall.Stat_t
 	assert(syscall.Lstat(nm, &st) == nil, "syscall.Lstat: %s", nm)
-	assert(ii.Blocks == int64(st.Blocks),
+	assert(ii.Blocks == st.Blocks,
 		"blocks: exp %d, saw %d", st.Blocks, ii.Blocks)
 	assert(ii.Blocks > 0, "blocks: zero for nonempty file %s", nm)
 

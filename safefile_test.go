@@ -35,16 +35,16 @@ func TestSafeFileSimple(t *testing.T) {
 
 	fn := filepath.Join(tmpdir, "file-1")
 
-	_, err := createFile(fn, 1024+mrand.IntN(65536))
+	_, err := createFile(fn, 1024+mrand.IntN(65536)) //nolint:gosec // test jitter
 	assert(err == nil, "can't create tmpfile: %s", err)
 
 	_, err = NewSafeFile(fn, 0, 0, 0600)
 	assert(err != nil, "%s: bypassed overwrite protection", fn)
 
-	buf := make([]byte, 128+mrand.IntN(65536))
+	buf := make([]byte, 128+mrand.IntN(65536)) //nolint:gosec // test jitter
 	randbuf(buf)
 
-	sf, err := NewSafeFile(fn, OPT_OVERWRITE, 0, 0600)
+	sf, err := NewSafeFile(fn, OptOverwrite, 0, 0600)
 	assert(err == nil, "%s: can't create safefile: %s", fn, err)
 	assert(sf != nil, "%s: nil ptr", fn)
 
@@ -67,13 +67,13 @@ func TestSafeFileAbort(t *testing.T) {
 
 	fn := filepath.Join(tmpdir, "file-1")
 
-	ck1, err := createFile(fn, 1024+mrand.IntN(65536))
+	ck1, err := createFile(fn, 1024+mrand.IntN(65536)) //nolint:gosec // test jitter
 	assert(err == nil, "can't create tmpfile: %s", err)
 
-	buf := make([]byte, 128+mrand.IntN(65536))
+	buf := make([]byte, 128+mrand.IntN(65536)) //nolint:gosec // test jitter
 	randbuf(buf)
 
-	sf, err := NewSafeFile(fn, OPT_OVERWRITE, 0, 0600)
+	sf, err := NewSafeFile(fn, OptOverwrite, 0, 0600)
 	assert(err == nil, "%s: can't create safefile: %s", fn, err)
 	assert(sf != nil, "%s: nil ptr", fn)
 
@@ -92,13 +92,13 @@ func TestSafeFileAbort(t *testing.T) {
 }
 
 func byteEq(a, b []byte) bool {
-	return 1 == subtle.ConstantTimeCompare(a, b)
+	return subtle.ConstantTimeCompare(a, b) == 1
 }
 
 func cksum(b []byte) []byte {
 	h := sha256.New()
 	h.Write(b)
-	return h.Sum(nil)[:]
+	return h.Sum(nil)
 }
 
 func fileCksum(nm string) ([]byte, error) {
@@ -118,7 +118,7 @@ func fileCksum(nm string) ([]byte, error) {
 		return nil, err
 	}
 
-	return h.Sum(nil)[:], nil
+	return h.Sum(nil), nil
 }
 
 // create a file and return cryptographic checksum
@@ -131,7 +131,7 @@ func createFile(nm string, sz int) ([]byte, error) {
 	defer fd.Close()
 
 	if sz <= 0 {
-		sz = 1024 + mrand.IntN(65536)
+		sz = 1024 + mrand.IntN(65536) //nolint:gosec // test jitter
 	}
 
 	buf := make([]byte, 4096)
@@ -164,10 +164,9 @@ func createFile(nm string, sz int) ([]byte, error) {
 	return h.Sum(nil), nil
 }
 
-func randbuf(b []byte) []byte {
+func randbuf(b []byte) {
 	n, err := crand.Read(b)
 	if err != nil || n != len(b) {
 		panic(fmt.Sprintf("can't read %d bytes of crypto/rand: %s", len(b), err))
 	}
-	return b
 }

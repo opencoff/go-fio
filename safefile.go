@@ -59,7 +59,7 @@ type SafeFile struct {
 var _ io.WriteCloser = &SafeFile{}
 
 const (
-	OPT_OVERWRITE uint32 = 1 << iota
+	OptOverwrite uint32 = 1 << iota
 )
 
 // NewSafeFile creates a new temporary file that would either be
@@ -68,7 +68,7 @@ const (
 // then the file is overwritten if it exists.
 func NewSafeFile(nm string, opts uint32, flag int, perm os.FileMode) (*SafeFile, error) {
 	if st, err := Stat(nm); err == nil {
-		if (opts & OPT_OVERWRITE) == 0 {
+		if (opts & OptOverwrite) == 0 {
 			return nil, fmt.Errorf("safefile: won't overwrite existing %s", nm)
 		}
 

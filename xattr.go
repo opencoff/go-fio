@@ -49,7 +49,7 @@ type Xattr map[string]string
 func (x Xattr) String() string {
 	var s strings.Builder
 	for k, v := range x {
-		s.WriteString(fmt.Sprintf("%s=%s\n", k, v))
+		fmt.Fprintf(&s, "%s=%s\n", k, v)
 	}
 	return s.String()
 }
@@ -180,14 +180,14 @@ func LdelXattr(nm string, keys ...string) error {
 
 // ClearXattr deletes all the extended attributes of a file.
 func ClearXattr(nm string) error {
-	return clear(nm, xattr.List, xattr.Remove)
+	return clearattr(nm, xattr.List, xattr.Remove)
 }
 
 // ClearXattr deletes all the extended attributes of a file.
 // If 'nm' points to a symlink, LSetXattr will delete the
 // extended attributes of the symlink and *not* the target.
 func LclearXattr(nm string) error {
-	return clear(nm, xattr.LList, xattr.LRemove)
+	return clearattr(nm, xattr.LList, xattr.LRemove)
 }
 
 // handy helper that works for files and symlinks.
@@ -220,7 +220,7 @@ func fetch(nm string, list func(nm string) ([]string, error),
 
 // handy helper to clear all xattr of nm; works for files and symlinks.
 // Tolerates the same list/remove TOCTOU that fetch does.
-func clear(nm string, list func(nm string) ([]string, error),
+func clearattr(nm string, list func(nm string) ([]string, error),
 	del func(nm, key string) error) error {
 	keys, err := list(nm)
 	if err != nil {
@@ -251,7 +251,7 @@ func repl(nm string, x Xattr, list func(nm string) ([]string, error),
 		return err
 	}
 
-	if err := clear(nm, list, del); err != nil {
+	if err := clearattr(nm, list, del); err != nil {
 		return err
 	}
 

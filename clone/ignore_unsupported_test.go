@@ -46,9 +46,9 @@ func TestUpdateMetaIgnoresUnsupported(t *testing.T) {
 	xattrErr := fmt.Errorf("set xattr: %w", fio.ErrXattrUnsupported)
 
 	mdUpdaters = []cloner{
-		func(dst string, fi *fio.Info) error { preRan++; return nil },
-		func(dst string, fi *fio.Info) error { return xattrErr },
-		func(dst string, fi *fio.Info) error { postRan++; return nil },
+		func(_ string, _ *fio.Info) error { preRan++; return nil },
+		func(_ string, _ *fio.Info) error { return xattrErr },
+		func(_ string, _ *fio.Info) error { postRan++; return nil },
 	}
 
 	fi := &fio.Info{}
@@ -94,8 +94,8 @@ func TestUpdateMetaIgnoresCapabilityMissing(t *testing.T) {
 
 	var postRan int
 	mdUpdaters = []cloner{
-		func(dst string, fi *fio.Info) error { return capErr },
-		func(dst string, fi *fio.Info) error { postRan++; return nil },
+		func(_ string, _ *fio.Info) error { return capErr },
+		func(_ string, _ *fio.Info) error { postRan++; return nil },
 	}
 
 	fi := &fio.Info{}
@@ -131,7 +131,7 @@ func TestUpdateMetaNonUnsupportedStillFails(t *testing.T) {
 
 	other := errors.New("generic clone failure")
 	mdUpdaters = []cloner{
-		func(dst string, fi *fio.Info) error { return other },
+		func(_ string, _ *fio.Info) error { return other },
 	}
 
 	fi := &fio.Info{}

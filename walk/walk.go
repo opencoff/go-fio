@@ -25,6 +25,7 @@ package walk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -84,7 +85,7 @@ const (
 // callers MUST check Err first and skip Info-based work. Depth is the
 // best-effort depth at which the error was detected.
 //
-// NOTE: the *Entry pointer delivered to WalkFunc's apply callback and
+// NOTE: the *Entry pointer delivered to Func's apply callback and
 // Options.Filter is only valid for the duration of the call. Callers who
 // need to retain data across calls must copy the Entry value itself
 // (e.g. `keep := *e`), not capture the pointer.
@@ -93,6 +94,11 @@ type Entry struct {
 	Depth int
 	Err   error
 }
+
+// Unbounded is the sentinel for Options.MaxDepth meaning "descend
+// without limit". It is the conventional value for callers that
+// want no depth cap. NewOptions seeds MaxDepth with this value.
+const Unbounded = -1
 
 // Options control the behavior of the filesystem walk.
 type Options struct {
@@ -111,6 +117,18 @@ type Options struct {
 	// than 1 - for those entries, only the first encountered
 	// entry is output.
 	IgnoreDuplicateInode bool
+
+	// MaxDepth caps descent.
+	//   Unbounded (-1): no cap; walk every level.
+	//   0:              emit only the roots; no descent.
+	//   N>0:            emit entries up to Depth==N; do not descend
+	//                   below N.
+	// 0 matches GNU `find -maxdepth 0` semantics. Note that the Go
+	// zero value (0) means "roots only" here, NOT "unbounded" --
+	// struct-literal callers MUST set MaxDepth: walk.Unbounded
+	// explicitly to walk the full tree. NewOptions seeds Unbounded
+	// for callers using the functional-options constructor.
+	MaxDepth int
 
 	// Types of entries to return
 	Type Type
@@ -131,6 +149,73 @@ type Options struct {
 	// the Entry value if you need to retain any of its data. Filter
 	// is never invoked for error-entries (Err != nil).
 	Filter func(e *Entry) (bool, error)
+}
+
+// Option configures a walk.Options. Functional-options pattern:
+// layer multiple options by passing them to NewOptions, or use
+// Options.Apply to layer onto an existing value.
+type Option func(*Options)
+
+// NewOptions constructs an Options seeded with sane defaults
+// (notably MaxDepth: Unbounded), then applies opts in order.
+func NewOptions(opts ...Option) Options {
+	o := Options{MaxDepth: Unbounded}
+	o.Apply(opts...)
+	return o
+}
+
+// Apply layers additional options onto o. Last write wins, matching
+// the convention of every other functional-options library.
+func (o *Options) Apply(opts ...Option) {
+	for _, fn := range opts {
+		fn(o)
+	}
+}
+
+// WithConcurrency sets the worker count. n<=0 means runtime.NumCPU().
+func WithConcurrency(n int) Option {
+	return func(o *Options) { o.Concurrency = n }
+}
+
+// WithFollowSymlinks sets whether symlinks are dereferenced during
+// the walk. Bool-taking so CLI-flag plumbing reads naturally.
+func WithFollowSymlinks(b bool) Option {
+	return func(o *Options) { o.FollowSymlinks = b }
+}
+
+// WithOneFS sets whether the walk stays on the same filesystem as
+// the roots. Bool-taking so CLI-flag plumbing reads naturally.
+func WithOneFS(b bool) Option {
+	return func(o *Options) { o.OneFS = b }
+}
+
+// WithIgnoreDuplicateInode sets whether hardlinked entries are
+// suppressed after the first one. Bool-taking for CLI-flag plumbing.
+func WithIgnoreDuplicateInode(b bool) Option {
+	return func(o *Options) { o.IgnoreDuplicateInode = b }
+}
+
+// WithType sets the output type filter (see the Type constants).
+func WithType(t Type) Option {
+	return func(o *Options) { o.Type = t }
+}
+
+// WithMaxDepth sets the descent cap. Unbounded (-1) for no limit,
+// 0 for roots only, N>0 for depth N. See Options.MaxDepth.
+func WithMaxDepth(n int) Option {
+	return func(o *Options) { o.MaxDepth = n }
+}
+
+// WithExcludes appends shell-glob patterns to the exclude list.
+// Multiple calls accumulate rather than replace, so a caller can
+// layer in patterns from several sources.
+func WithExcludes(patterns ...string) Option {
+	return func(o *Options) { o.Excludes = append(o.Excludes, patterns...) }
+}
+
+// WithFilter sets the entry-filter callback. See Options.Filter.
+func WithFilter(fn func(*Entry) (bool, error)) Option {
+	return func(o *Options) { o.Filter = fn }
 }
 
 // walkItem is the unit of work queued between doWalk and workers.
@@ -241,13 +326,13 @@ func Walk(ctx context.Context, names []string, opt Options) <-chan Entry {
 	return out
 }
 
-// WalkFunc traverses the entries in 'names' in a concurrent fashion and calls
+// Func traverses the entries in 'names' in a concurrent fashion and calls
 // 'apply' for entries that match criteria in 'opt'. The apply function must be
 // concurrency-safe: it will be called concurrently from multiple go-routines.
 //
 // apply is also invoked for traversal error-entries (Err != nil); callbacks
 // MUST check e.Err before touching e.Info. If apply returns a non-nil error
-// the walk short-circuits: no further entries are delivered, and WalkFunc
+// the walk short-circuits: no further entries are delivered, and Func
 // returns that error. A nil return from the callback (even on an
 // error-entry) means "keep going".
 //
@@ -255,7 +340,7 @@ func Walk(ctx context.Context, names []string, opt Options) <-chan Entry {
 // If the callback needs to retain any of the entry's data across calls
 // (e.g. to store in a map), it must copy the Entry value itself rather
 // than capturing the pointer.
-func WalkFunc(ctx context.Context, names []string, opt Options, apply func(e *Entry) error) error {
+func Func(ctx context.Context, names []string, opt Options, apply func(e *Entry) error) error {
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = runtime.NumCPU()
 	}
@@ -399,7 +484,14 @@ func (d *walkState) doWalk(names []string) {
 			if d.OneFS {
 				d.trackFS(e)
 			}
-			dirs = append(dirs, walkItem{nm, 0})
+			if d.canDescend(0) {
+				dirs = append(dirs, walkItem{nm, 0})
+			} else {
+				// At MaxDepth=0: emit the root here since the
+				// worker (which normally lstats+emits) will never
+				// see this dir.
+				d.output(e)
+			}
 
 		case (m & os.ModeSymlink) > 0:
 			// we may have new info now. The symlink may point to file, dir or
@@ -540,7 +632,8 @@ func (d *walkState) walkPath(nm string, depth int) {
 	names, err := readDir(nm)
 	if err != nil {
 		// readDir wraps as *walk.Error; unwrap so sendErr can preserve Op/Name.
-		if we, ok := err.(*Error); ok {
+		var we *Error
+		if errors.As(err, &we) {
 			d.sendErr(depth, we.Op, we.Name, we.Err)
 		} else {
 			d.sendErr(depth, "readdir", nm, err)
@@ -595,7 +688,12 @@ func (d *walkState) walkPath(nm string, depth int) {
 		case m.IsDir():
 			// don't descend if this directory is not on the same file system.
 			if d.singlefs(e) {
-				dirs = append(dirs, walkItem{fp, childDepth})
+				if d.canDescend(childDepth) {
+					dirs = append(dirs, walkItem{fp, childDepth})
+				} else {
+					// At-cap dir: emit here since worker won't.
+					d.output(e)
+				}
 			}
 
 		case (m & os.ModeSymlink) > 0:
@@ -646,7 +744,12 @@ func (d *walkState) doSymlink(e *Entry, dirs []walkItem) []walkItem {
 			// Check if we crossed mountpoints after symlink
 			// resolution.
 			if d.singlefs(e) {
-				dirs = append(dirs, walkItem{nm, e.Depth})
+				if d.canDescend(e.Depth) {
+					dirs = append(dirs, walkItem{nm, e.Depth})
+				} else {
+					// At-cap dir: emit here since worker won't.
+					d.output(e)
+				}
 			}
 		default:
 			d.output(e)
@@ -673,6 +776,14 @@ func (d *walkState) isEntrySeen(e *Entry) bool {
 func (d *walkState) trackFS(e *Entry) {
 	key := fmt.Sprintf("%d:%d", e.Dev, e.Rdev)
 	d.fs.Store(key, &e.Info)
+}
+
+// canDescend reports whether a directory at the given depth should
+// have its contents enqueued for traversal. MaxDepth < 0 (Unbounded)
+// always descends; otherwise we descend iff stepping one level deeper
+// (depth+1) would not exceed MaxDepth -- i.e. depth < MaxDepth.
+func (d *walkState) canDescend(depth int) bool {
+	return d.MaxDepth < 0 || depth < d.MaxDepth
 }
 
 // Return true if the inode is on the same file system as the command line args

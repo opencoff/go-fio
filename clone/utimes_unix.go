@@ -28,7 +28,7 @@ func clonetimes(dest string, fi *fio.Info) error {
 	// The situation with utimes and symlinks is broken across
 	// platforms:
 	//  - darwin and bsd's don't have nano-second utimes() or lutimes()
-	//  - linux has 4 differnt variants of utimes/lutimes/utimensat etc.
+	//  - linux has 4 different variants of utimes/lutimes/utimensat etc.
 	//  - then there is the confusing mess of struct timespec vs. struct timeval
 	//    (one has ns resolution while the other has us).
 	//

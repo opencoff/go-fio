@@ -139,6 +139,7 @@ func defaultOptions() treeopt {
 		Options: walk.Options{
 			Concurrency: runtime.NumCPU(),
 			Type:        walk.ALL,
+			MaxDepth:    walk.Unbounded,
 		},
 		o: NopObserver(),
 	}
@@ -169,10 +170,8 @@ func Tree(ctx context.Context, dst, src string, opt ...Option) error {
 		if err = File(dst, src); err != nil {
 			return err
 		}
-	} else {
-		if !di.IsDir() {
-			return &Error{"clone", src, dst, fmt.Errorf("dst is not a dir")}
-		}
+	} else if !di.IsDir() {
+		return &Error{"clone", src, dst, fmt.Errorf("dst is not a dir")}
 	}
 
 	option := defaultOptions()
@@ -273,7 +272,7 @@ func (cc *dircloner) clone(ctx context.Context) error {
 	eg, egctx = errgroup.WithContext(ctx)
 	eg.SetLimit(conc)
 
-	submit := func(p string, fn func() error) bool {
+	submit := func(_ string, fn func() error) bool {
 		if egctx.Err() != nil {
 			return false
 		}

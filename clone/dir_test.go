@@ -62,11 +62,9 @@ func TestTreeCloneBasic(t *testing.T) {
 	err = os.MkdirAll(dst, 0700)
 	assert(err == nil, "mkdir dst: %s: %s", dst, err)
 
-	//err = mkfiles(src, []string{"a/b", "a/c"}, 3)
 	err = mkfiles(src, []string{"a/b"}, 2)
 	assert(err == nil, "mkfiles src: %s", err)
 
-	//err = mkfiles(dst, []string{"a/b", "a/c"}, 3)
 	err = mkfiles(dst, []string{"a/b"}, 2)
 	assert(err == nil, "mkfiles src: %s", err)
 
@@ -175,13 +173,11 @@ func mkfiles(base string, paths []string, n int) error {
 	return nil
 }
 
-func treeEq(src, dst string, t *testing.T) error {
+func treeEq(src, dst string, _ *testing.T) error {
 	d, err := cmp.FsTree(context.Background(), src, dst)
 	if err != nil {
 		return err
 	}
-
-	//t.Logf("%s\n", d)
 
 	if d.Funny.Size() > 0 {
 		return yerror("funny", d.Funny)
@@ -248,7 +244,7 @@ func (o *po) Delete(d string, _ *fio.Info) {
 	fmt.Printf("# rm %s\n", d)
 }
 
-func (p *po) Link(d, s string, _ *fio.Info) {
+func (o *po) Link(d, s string, _ *fio.Info) {
 	fmt.Printf("# ln %s %s\n", s, d)
 }
 func (o *po) MetadataUpdate(d, s string, _ *fio.Info) {

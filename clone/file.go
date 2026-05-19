@@ -102,7 +102,7 @@ func fileWith(dst, src string, opt metaOpt) error {
 			return &Error{"mknod", src, dst, err}
 		}
 
-	//case ModeSocket: XXX Add named socket support
+	// case ModeSocket: XXX Add named socket support
 
 	default:
 		err = fmt.Errorf("unsupported type %s", mode.Type())
@@ -123,7 +123,7 @@ func copyRegular(dst string, s *os.File, fi *fio.Info) error {
 
 	// We create the file so that we can write to it; we'll update the perm bits
 	// later on
-	d, err := fio.NewSafeFile(dst, fio.OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
+	d, err := fio.NewSafeFile(dst, fio.OptOverwrite, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0600)
 	if err != nil {
 		return &Error{"safefile", s.Name(), dst, err}
 	}

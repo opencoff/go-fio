@@ -35,20 +35,20 @@ import (
 type IgnoreFlag uint
 
 const (
-	IGN_UID   IgnoreFlag = 1 << iota // ignore uid
-	IGN_GID                          // ignore gid
-	IGN_XATTR                        // ignore xattr
+	IgnoreUid   IgnoreFlag = 1 << iota // ignore uid
+	IgnoreGid                          // ignore gid
+	IgnoreXattr                        // ignore xattr
 )
 
 func (f IgnoreFlag) String() string {
 	var z []string
-	if f&IGN_UID > 0 {
+	if f&IgnoreUid > 0 {
 		z = append(z, "uid")
 	}
-	if f&IGN_GID > 0 {
+	if f&IgnoreGid > 0 {
 		z = append(z, "gid")
 	}
-	if f&IGN_XATTR > 0 {
+	if f&IgnoreXattr > 0 {
 		z = append(z, "xattr")
 	}
 
@@ -74,6 +74,7 @@ func defaultOptions() cmpopt {
 			Type:           walk.ALL,
 			OneFS:          false,
 			FollowSymlinks: false,
+			MaxDepth:       walk.Unbounded,
 			Excludes:       []string{".zfs"},
 		},
 		ignoreAttr: 0,
@@ -249,7 +250,7 @@ func (d *Difference) String() string {
 // it compares file size and mtime to determine change.
 // For all entries, it compares every comparable attribute of fio.Info - unless
 // explicitly ignored (by using the option WithIgnore()). The ignorable
-// attributes are identified by IGN_xxx constants.
+// attributes are identified by Ignore* constants.
 //
 // The caller supplies a context.Context; cancelling ctx aborts both
 // concurrent walks promptly. Traversal errors discovered by walk are
@@ -286,7 +287,7 @@ func FsTree(ctx context.Context, src, dst string, opt ...Option) (*Difference, e
 	// since we're doing both walks in parallel, we ensure concurrency limits
 	// are honored. Guard against the half-of-1 == 0 case; walk would then
 	// reset to NumCPU and blow past the caller's cap.
-	wo.Concurrency = wo.Concurrency / 2
+	wo.Concurrency /= 2
 	if wo.Concurrency < 1 {
 		wo.Concurrency = 1
 	}
@@ -296,7 +297,7 @@ func FsTree(ctx context.Context, src, dst string, opt ...Option) (*Difference, e
 	defer cancel()
 
 	var wg sync.WaitGroup
-	var err_L, err_R error
+	var errL, errR error
 
 	wg.Add(2)
 
@@ -304,7 +305,7 @@ func FsTree(ctx context.Context, src, dst string, opt ...Option) (*Difference, e
 	rhs := fio.NewMap()
 
 	go func(w *sync.WaitGroup) {
-		err := walk.WalkFunc(wctx, []string{src}, wo, func(e *walk.Entry) error {
+		err := walk.Func(wctx, []string{src}, wo, func(e *walk.Entry) error {
 			if e.Err != nil {
 				return e.Err
 			}
@@ -320,14 +321,14 @@ func FsTree(ctx context.Context, src, dst string, opt ...Option) (*Difference, e
 			return nil
 		})
 		if err != nil {
-			err_L = &Error{"walk-src", src, dst, err}
+			errL = &Error{"walk-src", src, dst, err}
 			cancel()
 		}
 		w.Done()
 	}(&wg)
 
 	go func(w *sync.WaitGroup) {
-		err := walk.WalkFunc(wctx, []string{dst}, wo, func(e *walk.Entry) error {
+		err := walk.Func(wctx, []string{dst}, wo, func(e *walk.Entry) error {
 			if e.Err != nil {
 				return e.Err
 			}
@@ -340,18 +341,18 @@ func FsTree(ctx context.Context, src, dst string, opt ...Option) (*Difference, e
 			return nil
 		})
 		if err != nil {
-			err_R = &Error{"walk-dst", src, dst, err}
+			errR = &Error{"walk-dst", src, dst, err}
 			cancel()
 		}
 		w.Done()
 	}(&wg)
 
 	wg.Wait()
-	if err_L != nil {
-		return nil, err_L
+	if errL != nil {
+		return nil, errL
 	}
-	if err_R != nil {
-		return nil, err_R
+	if errR != nil {
+		return nil, errR
 	}
 
 	d := cmpInternal(lhs, rhs, &option)
@@ -442,19 +443,19 @@ func newCmp(lhs, rhs *fio.Map, opt *cmpopt) *cmp {
 type diffType uint
 
 const (
-	_D_MTIME diffType = 1 << iota
-	_D_UID
-	_D_GID
-	_D_XATTR
-	_D_CUSTOM
+	dMtime diffType = 1 << iota
+	dUid
+	dGid
+	dXattr
+	dCustom
 )
 
-var diffTypeName map[diffType]string = map[diffType]string{
-	_D_MTIME:  "mtime",
-	_D_UID:    "uid",
-	_D_GID:    "gid",
-	_D_XATTR:  "xattr",
-	_D_CUSTOM: "custom",
+var diffTypeName = map[diffType]string{
+	dMtime:  "mtime",
+	dUid:    "uid",
+	dGid:    "gid",
+	dXattr:  "xattr",
+	dCustom: "custom",
 }
 
 func (d diffType) String() string {
@@ -475,32 +476,32 @@ func makeEqFunc(opts *cmpopt) fileqFunc {
 	// We always have the most basic comparator: mtime
 	eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
 		if lhs.Mode().Type() == fs.ModeSymlink {
-			return true, _D_MTIME
+			return true, dMtime
 		}
-		return lhs.Mtim.Equal(rhs.Mtim), _D_MTIME
+		return lhs.Mtim.Equal(rhs.Mtim), dMtime
 	})
 
 	// build out the rest of optional comparators
-	if !ignore(IGN_UID) {
+	if !ignore(IgnoreUid) {
 		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
-			return lhs.Uid == rhs.Uid, _D_UID
+			return lhs.Uid == rhs.Uid, dUid
 		})
 	}
-	if !ignore(IGN_GID) {
+	if !ignore(IgnoreGid) {
 		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
-			return lhs.Gid == rhs.Gid, _D_GID
+			return lhs.Gid == rhs.Gid, dGid
 		})
 	}
-	if !ignore(IGN_XATTR) {
+	if !ignore(IgnoreXattr) {
 		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
-			return lhs.Xattr.Equal(rhs.Xattr), _D_XATTR
+			return lhs.Xattr.Equal(rhs.Xattr), dXattr
 		})
 	}
 
 	// we want potentially expensive comparisons to be done last.
 	if opts.deepEq != nil {
 		eqv = append(eqv, func(lhs, rhs *fio.Info) (bool, diffType) {
-			return opts.deepEq(lhs, rhs), _D_CUSTOM
+			return opts.deepEq(lhs, rhs), dCustom
 		})
 	}
 

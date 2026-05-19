@@ -24,7 +24,7 @@ import (
 )
 
 // clone a symlink - ie we make the target point to the same one as src
-func clonelink(dst string, src string, fi *fio.Info) error {
+func clonelink(dst string, src string, _ *fio.Info) error {
 	targ, err := os.Readlink(src)
 	if err != nil {
 		return &Error{"readlink", src, dst, err}

@@ -52,7 +52,7 @@ func slowCopy(dst, src string, perm fs.FileMode) error {
 
 	defer s.Close()
 
-	d, err := NewSafeFile(dst, OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
+	d, err := NewSafeFile(dst, OptOverwrite, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
 	if err != nil {
 		return &CopyError{"safefile", src, dst, err}
 	}

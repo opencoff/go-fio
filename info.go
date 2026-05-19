@@ -13,8 +13,6 @@
 // warranty; it is provided "as is". No claim is made to its
 // suitability for any purpose.
 
-//go:generate ./scripts/gen-proto.sh proto/*.proto
-
 package fio
 
 import (
@@ -216,13 +214,10 @@ func (ii *Info) IsRegular() bool {
 	return m.IsRegular()
 }
 
-// IsSameFs returns true if a and b represent file entries on the
+// IsSameFs returns true if ii and b represent file entries on the
 // same file system
-func (a *Info) IsSameFS(b *Info) bool {
-	if a.Dev == b.Dev && a.Rdev == b.Rdev {
-		return true
-	}
-	return false
+func (ii *Info) IsSameFS(b *Info) bool {
+	return ii.Dev == b.Dev && ii.Rdev == b.Rdev
 }
 
 // Sys returns the platform specific info - in our case it

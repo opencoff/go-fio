@@ -33,9 +33,7 @@ type test struct {
 	typ Type
 }
 
-var tests = []test{
-	//{"$HOME/.config", FILE | SYMLINK},
-}
+var tests = []test{}
 
 var linuxTests = []test{
 	{"/dev", ALL},
@@ -50,7 +48,6 @@ var linuxTests = []test{
 var macOSTests = []test{
 	{"/etc", ALL},
 	{"/bin", FILE},
-	//{"$HOME/Library/Preferences", FILE | SYMLINK},
 }
 
 func (tx *test) String() string {
@@ -92,8 +89,6 @@ func TestWalkSimple(t *testing.T) {
 		tx := &tests[i]
 		compareWalks(tx, t)
 	}
-
-	//os.RemoveAll(tmpdir)
 }
 
 func compareWalks(tx *test, t *testing.T) {
@@ -128,7 +123,7 @@ func compareWalks(tx *test, t *testing.T) {
 	// in our concurrent-walker.
 
 	if len(r2) > 0 {
-		var rem []string
+		rem := make([]string, 0, len(r2))
 
 		for k := range r2 {
 			rem = append(rem, k)
@@ -198,6 +193,7 @@ func newWalk(tx *test) (map[string]fs.FileInfo, error) {
 	opt := Options{
 		FollowSymlinks: false,
 		OneFS:          false,
+		MaxDepth:       Unbounded,
 		Type:           tx.typ,
 	}
 

@@ -1,5 +1,5 @@
 // unified_error_test.go -- tests for the Entry.Err unified error
-// stream, context cancellation, and WalkFunc callback-error
+// stream, context cancellation, and Func callback-error
 // short-circuit.
 //
 // SPDX-License-Identifier: GPL-2.0
@@ -44,7 +44,7 @@ func TestWalkUnifiedEntryStream(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	opt := Options{Type: ALL, FollowSymlinks: true}
+	opt := Options{Type: ALL, FollowSymlinks: true, MaxDepth: Unbounded}
 	ch := Walk(context.Background(), []string{root}, opt)
 
 	var sawErr bool
@@ -93,7 +93,7 @@ func TestWalkCtxCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ch := Walk(ctx, []string{root}, Options{Type: ALL, Concurrency: 4})
+	ch := Walk(ctx, []string{root}, Options{Type: ALL, Concurrency: 4, MaxDepth: Unbounded})
 
 	// consume a handful of entries, then cancel
 	drained := 0
@@ -108,6 +108,7 @@ func TestWalkCtxCancel(t *testing.T) {
 	// drain the rest so the channel closes (but we've already cancelled)
 	done := make(chan struct{})
 	go func() {
+		//nolint:revive // intentional drain: wait for ch to close after cancel
 		for range ch {
 		}
 		close(done)
@@ -130,7 +131,7 @@ func TestWalkCtxCancel(t *testing.T) {
 
 // TestWalkFuncCallbackError verifies that a callback returning a
 // non-nil error short-circuits the walk: later entries are not
-// processed, and WalkFunc returns the callback's error.
+// processed, and Func returns the callback's error.
 func TestWalkFuncCallbackError(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < 100; i++ {
@@ -143,7 +144,7 @@ func TestWalkFuncCallbackError(t *testing.T) {
 	wantErr := errors.New("stop walking")
 	var seen atomic.Int32
 
-	err := WalkFunc(context.Background(), []string{root}, Options{Type: ALL}, func(e *Entry) error {
+	err := Func(context.Background(), []string{root}, Options{Type: ALL, MaxDepth: Unbounded}, func(e *Entry) error {
 		if e.Err != nil {
 			return e.Err
 		}
@@ -155,7 +156,7 @@ func TestWalkFuncCallbackError(t *testing.T) {
 	})
 
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("WalkFunc: got err=%v, want %v", err, wantErr)
+		t.Fatalf("Func: got err=%v, want %v", err, wantErr)
 	}
 
 	// No tight bound is possible because Concurrency workers may already

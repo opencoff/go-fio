@@ -26,7 +26,7 @@ func makeInfo(fi *Info, nm string, st *syscall.Stat_t, x Xattr) {
 	*fi = Info{
 		Ino:    st.Ino,
 		Siz:    st.Size,
-		Blocks: int64(st.Blocks),
+		Blocks: st.Blocks,
 		// st.Dev/st.Rdev are int32 on darwin and uint64 on
 		// freebsd. Real device IDs are non-negative; the
 		// uint32 step makes the zero-extension explicit on

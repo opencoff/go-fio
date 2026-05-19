@@ -28,13 +28,13 @@ import (
 func TestReplClearErrorPropagates(t *testing.T) {
 	errBoom := errors.New("del: boom")
 
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", "user.b"}, nil
 	}
 
 	// del fails on the second key; clear() should return the error and
 	// repl() must propagate it.
-	del := func(nm, key string) error {
+	del := func(_, key string) error {
 		if key == "user.b" {
 			return errBoom
 		}
@@ -42,7 +42,7 @@ func TestReplClearErrorPropagates(t *testing.T) {
 	}
 
 	setCalls := 0
-	set := func(nm, key string, val []byte) error {
+	set := func(_, _ string, _ []byte) error {
 		setCalls++
 		return nil
 	}
@@ -64,11 +64,11 @@ func TestReplClearErrorPropagates(t *testing.T) {
 // between list() and get() (another process removing it) does not
 // abort the whole fetch - the race is benign and the key is skipped.
 func TestFetchSkipsNotFound(t *testing.T) {
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", "user.gone", "user.b"}, nil
 	}
 
-	get := func(nm, key string) ([]byte, error) {
+	get := func(_, key string) ([]byte, error) {
 		if key == "user.gone" {
 			return nil, errXattrNotFound
 		}
@@ -93,10 +93,10 @@ func TestFetchSkipsNotFound(t *testing.T) {
 func TestFetchPropagatesOtherGetError(t *testing.T) {
 	errBoom := errors.New("get: boom")
 
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", "trusted.b"}, nil
 	}
-	get := func(nm, key string) ([]byte, error) {
+	get := func(_, key string) ([]byte, error) {
 		if key == "trusted.b" {
 			return nil, errBoom
 		}
@@ -112,12 +112,12 @@ func TestFetchPropagatesOtherGetError(t *testing.T) {
 // TestClearSkipsNotFound verifies clear() swallows ENODATA from a
 // del() that races with concurrent removal.
 func TestClearSkipsNotFound(t *testing.T) {
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", "user.gone", "user.b"}, nil
 	}
 
 	var delKeys []string
-	del := func(nm, key string) error {
+	del := func(_, key string) error {
 		delKeys = append(delKeys, key)
 		if key == "user.gone" {
 			return errXattrNotFound
@@ -125,7 +125,7 @@ func TestClearSkipsNotFound(t *testing.T) {
 		return nil
 	}
 
-	if err := clear("/x", list, del); err != nil {
+	if err := clearattr("/x", list, del); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	if len(delKeys) != 3 {
@@ -137,16 +137,16 @@ func TestClearSkipsNotFound(t *testing.T) {
 // still abort the clear.
 func TestClearPropagatesOtherDelError(t *testing.T) {
 	errBoom := errors.New("del: boom")
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", "user.b"}, nil
 	}
-	del := func(nm, key string) error {
+	del := func(_, key string) error {
 		if key == "user.b" {
 			return errBoom
 		}
 		return nil
 	}
-	if err := clear("/x", list, del); !errors.Is(err, errBoom) {
+	if err := clearattr("/x", list, del); !errors.Is(err, errBoom) {
 		t.Fatalf("clear: expected err wrapping %v, got %v", errBoom, err)
 	}
 }
@@ -198,10 +198,10 @@ func TestWrapUnsupportedPassthrough(t *testing.T) {
 // TestFetchWrapsUnsupported verifies that an ENOTSUP from list() in
 // the fetch path is surfaced as ErrXattrUnsupported.
 func TestFetchWrapsUnsupported(t *testing.T) {
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return nil, syscall.ENOTSUP
 	}
-	get := func(nm, key string) ([]byte, error) {
+	get := func(_, _ string) ([]byte, error) {
 		return nil, nil
 	}
 
@@ -214,18 +214,18 @@ func TestFetchWrapsUnsupported(t *testing.T) {
 // TestReplClearSuccessRunsSet verifies the happy path: when clear()
 // succeeds, repl() proceeds to set the new attributes.
 func TestReplClearSuccessRunsSet(t *testing.T) {
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.old"}, nil
 	}
 
 	delCalls := 0
-	del := func(nm, key string) error {
+	del := func(_, _ string) error {
 		delCalls++
 		return nil
 	}
 
 	gotKeys := map[string]string{}
-	set := func(nm, key string, val []byte) error {
+	set := func(_, key string, val []byte) error {
 		gotKeys[key] = string(val)
 		return nil
 	}

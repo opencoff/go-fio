@@ -148,7 +148,7 @@ func TestDepth_PlainWalk(t *testing.T) {
 		t.Fatalf("fixture: %v", err)
 	}
 
-	got := collect(t, []string{root}, Options{Type: ALL})
+	got := collect(t, []string{root}, Options{Type: ALL, MaxDepth: Unbounded})
 	assertExact(t, got, expectedDepths(root))
 }
 
@@ -171,7 +171,7 @@ func TestDepth_MultipleRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := collect(t, []string{rootA, rootB}, Options{Type: ALL})
+	got := collect(t, []string{rootA, rootB}, Options{Type: ALL, MaxDepth: Unbounded})
 
 	j := filepath.Join
 	expect := map[string]int{
@@ -196,6 +196,7 @@ func TestDepth_WithExcludes(t *testing.T) {
 
 	got := collect(t, []string{root}, Options{
 		Type:     ALL,
+		MaxDepth: Unbounded,
 		Excludes: []string{"skip"},
 	})
 
@@ -224,7 +225,8 @@ func TestDepth_WithFilter(t *testing.T) {
 	// — so no 'b', 'b/c', 'b/c/d', 'b/e'. Everything else stays with
 	// the right depth.
 	got := collect(t, []string{root}, Options{
-		Type: ALL,
+		Type:     ALL,
+		MaxDepth: Unbounded,
 		Filter: func(e *Entry) (bool, error) {
 			return e.Name() == "b", nil
 		},
@@ -260,7 +262,8 @@ func TestDepth_FilterSeesDepth(t *testing.T) {
 	// MaxDepth semantic: skip anything deeper than 2.
 	const maxDepth = 2
 	got := collect(t, []string{root}, Options{
-		Type: ALL,
+		Type:     ALL,
+		MaxDepth: Unbounded,
 		Filter: func(e *Entry) (bool, error) {
 			mu.Lock()
 			seen[e.Path()] = e.Depth
@@ -309,6 +312,7 @@ func TestDepth_ExcludesAndFilter(t *testing.T) {
 
 	got := collect(t, []string{root}, Options{
 		Type:     ALL,
+		MaxDepth: Unbounded,
 		Excludes: []string{"skip"},
 		Filter: func(e *Entry) (bool, error) {
 			// drop the symlink itself (we're not following here)
@@ -366,6 +370,7 @@ func TestDepth_FollowSymlinkRetainsLinkDepth(t *testing.T) {
 	// resolution finds the inode already recorded and skips re-output.
 	got := collect(t, []string{root}, Options{
 		Type:                 ALL,
+		MaxDepth:             Unbounded,
 		FollowSymlinks:       true,
 		IgnoreDuplicateInode: true,
 	})
@@ -397,22 +402,22 @@ func keys(m map[string]int) []string {
 	return out
 }
 
-// --- 8. WalkFunc path sees the same depths as Walk -------------------------
+// --- 8. Func path sees the same depths as Walk ----------------------------
 //
 // The pointer-based apply callback must observe identical depths to the
 // value-channel form; we assert equivalence across both APIs.
 
-func TestDepth_WalkFuncMatchesWalk(t *testing.T) {
+func TestDepth_FuncMatchesWalk(t *testing.T) {
 	root := t.TempDir()
 	if err := buildDepthFixture(root); err != nil {
 		t.Fatalf("fixture: %v", err)
 	}
 
-	viaChan := collect(t, []string{root}, Options{Type: ALL})
+	viaChan := collect(t, []string{root}, Options{Type: ALL, MaxDepth: Unbounded})
 
 	viaFunc := make(map[string]int)
 	var mu sync.Mutex
-	err := WalkFunc(context.Background(), []string{root}, Options{Type: ALL}, func(e *Entry) error {
+	err := Func(context.Background(), []string{root}, Options{Type: ALL, MaxDepth: Unbounded}, func(e *Entry) error {
 		if e.Err != nil {
 			return e.Err
 		}
@@ -422,8 +427,73 @@ func TestDepth_WalkFuncMatchesWalk(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("WalkFunc: %v", err)
+		t.Fatalf("Func: %v", err)
 	}
 
 	assertExact(t, viaFunc, viaChan)
+}
+
+// --- 9. MaxDepth: native cap at the walker level ----------------------------
+//
+// The walker prunes descent at MaxDepth without needing a Filter
+// callback. Entries AT MaxDepth are still emitted; descent below is
+// suppressed. Unbounded (-1) walks every level.
+
+func TestMaxDepth_RootsOnly(t *testing.T) {
+	root := t.TempDir()
+	if err := buildDepthFixture(root); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+
+	// MaxDepth=0 emits only the root and nothing else.
+	got := collect(t, []string{root}, Options{
+		Type:     ALL,
+		MaxDepth: 0,
+	})
+
+	expect := map[string]int{
+		root: 0,
+	}
+	assertExact(t, got, expect)
+}
+
+func TestMaxDepth_BoundedAtTwo(t *testing.T) {
+	root := t.TempDir()
+	if err := buildDepthFixture(root); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+
+	// MaxDepth=2 emits depth 0, 1, and 2 entries; cuts off below.
+	// From the fixture: b/c/d (depth 3) must not appear.
+	got := collect(t, []string{root}, Options{
+		Type:     ALL,
+		MaxDepth: 2,
+	})
+
+	j := filepath.Join
+	expect := map[string]int{
+		root:              0,
+		j(root, "a"):      1,
+		j(root, "b"):      1,
+		j(root, "b/c"):    2,
+		j(root, "b/e"):    2,
+		j(root, "skip"):   1,
+		j(root, "skip/x"): 2,
+		j(root, "sym"):    1,
+	}
+	assertExact(t, got, expect)
+}
+
+func TestMaxDepth_UnboundedMatchesBaseline(t *testing.T) {
+	root := t.TempDir()
+	if err := buildDepthFixture(root); err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+
+	// Unbounded walks the full tree -- identical to the plain-walk baseline.
+	got := collect(t, []string{root}, Options{
+		Type:     ALL,
+		MaxDepth: Unbounded,
+	})
+	assertExact(t, got, expectedDepths(root))
 }

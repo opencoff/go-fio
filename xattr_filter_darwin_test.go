@@ -66,12 +66,12 @@ func TestFilterKeys(t *testing.T) {
 // darwinACLKey and verifies fetch skips it without calling get()
 // for that key.
 func TestFetchFiltersDarwinACL(t *testing.T) {
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", darwinACLKey, "user.b"}, nil
 	}
 
 	var gotCalls []string
-	get := func(nm, key string) ([]byte, error) {
+	get := func(_, key string) ([]byte, error) {
 		gotCalls = append(gotCalls, key)
 		return []byte("v-" + key), nil
 	}
@@ -94,15 +94,15 @@ func TestFetchFiltersDarwinACL(t *testing.T) {
 // reserved key so we never try to removexattr an unremovable
 // attribute.
 func TestClearFiltersDarwinACL(t *testing.T) {
-	list := func(nm string) ([]string, error) {
+	list := func(_ string) ([]string, error) {
 		return []string{"user.a", darwinACLKey, "user.b"}, nil
 	}
 	var delKeys []string
-	del := func(nm, key string) error {
+	del := func(_, key string) error {
 		delKeys = append(delKeys, key)
 		return nil
 	}
-	if err := clear("/x", list, del); err != nil {
+	if err := clearattr("/x", list, del); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	for _, k := range delKeys {

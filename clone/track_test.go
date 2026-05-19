@@ -51,7 +51,7 @@ func TestDoDelTracksParent(t *testing.T) {
 	if err := os.MkdirAll(parent, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestDoCopyTracksParent(t *testing.T) {
 	}
 	src := filepath.Join(srcDir, "file")
 	dst := filepath.Join(dstDir, "file")
-	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(src, []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
 
@@ -120,7 +120,7 @@ func TestDoLinkTracksParent(t *testing.T) {
 	}
 	src := filepath.Join(srcDir, "orig")
 	dst := filepath.Join(dstDir, "link")
-	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+	if err := os.WriteFile(src, []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write src: %v", err)
 	}
 

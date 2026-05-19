@@ -54,7 +54,7 @@ func mkfilex(fn string) error {
 		return fmt.Errorf("creat: %s: %w", fn, err)
 	}
 
-	sz := 1024 + rand.Int64N(32768)
+	sz := 1024 + rand.Int64N(32768) //nolint:gosec // test fixture
 	b := make([]byte, sz)
 	_, err = crand.Read(b)
 	if err != nil {

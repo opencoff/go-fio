@@ -269,7 +269,7 @@ func TestProtoDeterministicBytes(t *testing.T) {
 // len(Marshal()) for a range of inputs including empty, small, and
 // larger payloads.
 func TestProtoMarshalSizeMatchesMarshal(t *testing.T) {
-	cases := []*Info{}
+	cases := make([]*Info, 0, 3)
 
 	// minimal
 	minInfo := &Info{Xattr: Xattr{}}
@@ -360,6 +360,11 @@ func TestProtoMarshalMany(t *testing.T) {
 	}
 }
 
+// randProtoInfo builds a randomized *Info for marshal round-trip
+// fuzzing. math/rand/v2 is intentional: non-cryptographic RNG is the
+// right tool for test fixtures.
+//
+//nolint:gosec // test fixture; non-cryptographic RNG is fine
 func randProtoInfo() *Info {
 	atim := time.Unix(rand.Int64N(4_000_000_000)-1_000_000_000, rand.Int64N(1_000_000_000))
 	ii := &Info{
@@ -386,6 +391,7 @@ func randProtoInfo() *Info {
 
 const asciiLowerUpper = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+//nolint:gosec // test fixture; non-cryptographic RNG is fine
 func randStr(n int) string {
 	var b strings.Builder
 	for i := 0; i < n; i++ {

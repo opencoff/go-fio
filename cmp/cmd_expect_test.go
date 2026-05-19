@@ -65,6 +65,7 @@ func (t *expectCmd) Run(env *tr.TestEnv, args []string) error {
 	wo := walk.Options{
 		Concurrency: env.Ncpu,
 		Type:        walk.ALL,
+		MaxDepth:    walk.Unbounded,
 	}
 
 	// now run the difference engine and collect output

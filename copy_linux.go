@@ -43,7 +43,7 @@ func sysCopyFile(dst, src string, perm fs.FileMode) error {
 		return &CopyError{"stat-src", src, dst, err}
 	}
 
-	d, err := NewSafeFile(dst, OPT_OVERWRITE, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
+	d, err := NewSafeFile(dst, OptOverwrite, os.O_CREATE|os.O_RDWR|os.O_EXCL, perm)
 	if err != nil {
 		return &CopyError{"safefile", src, dst, err}
 	}

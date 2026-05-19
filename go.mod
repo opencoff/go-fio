@@ -1,6 +1,6 @@
 module github.com/opencoff/go-fio
 
-go 1.24.0
+go 1.26.3
 
 //replace github.com/opencoff/go-testrunner => ../go-testrunner
 
