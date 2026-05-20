@@ -28,6 +28,8 @@ import (
 type recObserver struct {
 	mu sync.Mutex
 
+	diff *cmp.Difference
+
 	mkdirs    []obsCall
 	copies    []obsCall
 	deletes   []obsCall
@@ -40,7 +42,11 @@ type obsCall struct {
 	fi       *fio.Info
 }
 
-func (r *recObserver) Difference(_ *cmp.Difference) {}
+func (r *recObserver) Difference(d *cmp.Difference) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.diff = d
+}
 func (r *recObserver) VisitSrc(_ *fio.Info)         {}
 func (r *recObserver) VisitDst(_ *fio.Info)         {}
 
@@ -249,4 +255,91 @@ func TestObserverPathConsistency(t *testing.T) {
 	}
 	sort.Strings(rels)
 	t.Logf("copy rels: %v", rels)
+}
+
+// TestObserverByteAccounting pins the cross-callback invariant that
+// downstream progress observers depend on: every regular-file byte
+// counted in the Difference snapshot surfaces through exactly one
+// of the per-event callbacks. The first member of an inode group
+// is delivered as Copy (full size); the rest are delivered as Link
+// (fi.Size() still describes the file). Summed together, the bytes
+// delivered through Copy + Link must equal LeftFiles+Diff bytes.
+//
+// Without this invariant, observers that pre-compute a transfer
+// budget from Difference (e.g. for a "copied X of Y bytes" bar)
+// would never see the bar fill up when hardlinks are present,
+// because the Link path delivers no Copy event for that file. A
+// real bug in cmd/nclone surfaced this way: mpb.Progress.Wait()
+// hung indefinitely because the byte bar could never reach its
+// declared total.
+func TestObserverByteAccounting(t *testing.T) {
+	assert := newAsserter(t)
+	tmp := getTmpdir(t)
+
+	src := path.Join(tmp, "lhs")
+	dst := path.Join(tmp, "rhs")
+
+	assert(os.MkdirAll(src, 0700) == nil, "mkdir src")
+	assert(os.MkdirAll(dst, 0700) == nil, "mkdir dst")
+
+	// Fixture exercises all three byte-bearing event paths:
+	//   - plain LeftFiles entries  -> Copy
+	//   - Diff entry (both sides)  -> Copy
+	//   - hardlink group           -> 1 Copy + N-1 Link
+	assert(mkfilex(path.Join(src, "plain/a")) == nil, "plain/a")
+	assert(mkfilex(path.Join(src, "plain/b")) == nil, "plain/b")
+	assert(mkfilex(path.Join(src, "hl/orig")) == nil, "hl/orig")
+	for _, n := range []string{"hl/h1", "hl/h2", "hl/h3"} {
+		assert(os.Link(path.Join(src, "hl/orig"), path.Join(src, n)) == nil,
+			"ln %s", n)
+	}
+	assert(mkfilex(path.Join(src, "mod/x")) == nil, "mod src")
+	assert(mkfilex(path.Join(dst, "mod/x")) == nil, "mod dst")
+
+	r := &recObserver{}
+	err := Tree(context.Background(), dst, src, WithObserver(r))
+	assert(err == nil, "clone: %s", err)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	assert(r.diff != nil, "Difference snapshot not received")
+
+	// Expected: sum of regular-file bytes the plan said it would move.
+	var expected int64
+	for _, fi := range r.diff.LeftFiles.All() {
+		if fi.IsRegular() {
+			expected += fi.Size()
+		}
+	}
+	for _, p := range r.diff.Diff.All() {
+		if p.Src.IsRegular() {
+			expected += p.Src.Size()
+		}
+	}
+
+	// Delivered: every regular Copy + every regular Link. Link's
+	// fi.Size() carries the real file size even though the link
+	// itself transfers no on-wire bytes.
+	var delivered int64
+	for _, c := range r.copies {
+		if c.fi.IsRegular() {
+			delivered += c.fi.Size()
+		}
+	}
+	for _, c := range r.links {
+		if c.fi.IsRegular() {
+			delivered += c.fi.Size()
+		}
+	}
+
+	assert(delivered == expected,
+		"byte accounting drift: events delivered %d, Difference said %d (diff %+d); "+
+			"observers that pre-compute totals from Difference will deadlock",
+		delivered, expected, delivered-expected)
+
+	// Sanity: the fixture must actually exercise the Link path,
+	// otherwise this test would have trivially passed even if the
+	// invariant were broken.
+	assert(len(r.links) >= 3,
+		"fixture did not produce any Link events; got %d", len(r.links))
 }
